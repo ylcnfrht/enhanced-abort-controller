@@ -1,0 +1,74 @@
+---
+title: Installation
+description: Install @ylcnfrht/enhanced-abort-controller, import it from ESM or CommonJS, and set up TypeScript for using declarations.
+sidebar:
+  order: 2
+---
+
+import { Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+
+<Tabs syncKey="pm">
+  <TabItem label="npm">
+    ```sh
+    npm i @ylcnfrht/enhanced-abort-controller
+    ```
+  </TabItem>
+  <TabItem label="pnpm">
+    ```sh
+    pnpm add @ylcnfrht/enhanced-abort-controller
+    ```
+  </TabItem>
+  <TabItem label="yarn">
+    ```sh
+    yarn add @ylcnfrht/enhanced-abort-controller
+    ```
+  </TabItem>
+  <TabItem label="bun">
+    ```sh
+    bun add @ylcnfrht/enhanced-abort-controller
+    ```
+  </TabItem>
+</Tabs>
+
+Zero runtime dependencies. Requires Node 20 or later; also runs in Bun, Deno and modern browsers.
+
+## Import
+
+<Tabs syncKey="module">
+  <TabItem label="ESM / TypeScript">
+    ```ts
+    import { EnhancedAbortController, TimeSpan, register, whenAborted, isAbortError } from '@ylcnfrht/enhanced-abort-controller';
+    ```
+  </TabItem>
+  <TabItem label="CommonJS">
+    ```js
+    const { EnhancedAbortController, TimeSpan } = require('@ylcnfrht/enhanced-abort-controller');
+    ```
+  </TabItem>
+</Tabs>
+
+The package ships separate ESM and CommonJS builds with their own type declarations. A `TimeSpan` created by one build is accepted by the other (delays are checked by shape, not by `instanceof`).
+
+## TypeScript
+
+Types are included. Two settings matter:
+
+- **`using` declarations** need TypeScript 5.2 or later. TypeScript compiles them down for runtimes that don't support them natively; Node 24 and Chrome 134 run them as is. Without `using`, call `controller.dispose()` in a `finally`.
+- **The `Disposable` type.** In Node projects `@types/node` provides it. Browser-only projects without `@types/node` need the disposable lib:
+
+```json title="tsconfig.json"
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "ESNext.Disposable", "DOM"]
+  }
+}
+```
+
+<Aside type="note">
+  Every TypeScript snippet on this site is type-checked against the library source when the site is built, so the examples compile as shown.
+</Aside>
+
+## Upgrading
+
+Coming from 1.x? 2.0 changes how the signal works. Read [Upgrading from 1.x](/migration/v1-to-v2/) first.

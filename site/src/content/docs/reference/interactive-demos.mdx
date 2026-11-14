@@ -1,0 +1,23 @@
+---
+title: Interactive demos
+description: All live widgets in one place, each running the real library in your browser.
+sidebar:
+  order: 2
+---
+
+import TimelineSimulator from '../../../components/TimelineSimulator.tsx';
+import LinkedSignals from '../../../components/LinkedSignals.tsx';
+
+Each widget runs the real `@ylcnfrht/enhanced-abort-controller` source in your browser. For free-form experiments, open the [playground](/playground/).
+
+## Timeline: abortAfter, abort, dispose
+
+Schedule and reschedule a deadline, cancel it with `Infinity`, abort by hand, register callbacks, dispose. Explained in [abortAfter & timeouts](/concepts/abort-after/).
+
+<TimelineSimulator client:visible />
+
+## Linked signals
+
+A request signal with per-step children. Explained in [Linked controllers](/concepts/linked-controllers/).
+
+<LinkedSignals client:visible />

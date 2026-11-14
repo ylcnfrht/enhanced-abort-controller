@@ -1,0 +1,138 @@
+---
+title: Express & Fastify
+description: Cancel database queries and upstream calls when the client disconnects, with a per-request controller and a server-side deadline.
+sidebar:
+  order: 3
+---
+
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+When a client closes the connection (navigates away, times out on its side, presses Escape), the work for that request is wasted. One controller per request stops it: aborted on disconnect, with a server-side deadline as well.
+
+## Detecting a disconnect
+
+The reliable signal in Node's HTTP server is the **response** `close` event. It fires when the response ends **or** the connection drops; `res.writableFinished` tells which:
+
+```ts
+res.on('close', () => {
+  if (!res.writableFinished) controller.abort(new Error('client disconnected'));
+});
+```
+
+<Aside type="caution">
+  Don't use `req.on('close')` for this: in current Node it also fires once the request body has been read, long before the client goes away.
+</Aside>
+
+## A middleware that gives every request a signal
+
+<Tabs syncKey="server">
+  <TabItem label="Express">
+```ts title="request-signal.ts"
+import type { Request, Response, NextFunction } from 'express';
+import { EnhancedAbortController, TimeSpan, isAbortError, isTimeoutError } from '@ylcnfrht/enhanced-abort-controller';
+
+declare global {
+  namespace Express {
+    interface Request { signal: AbortSignal }
+  }
+}
+
+export function requestSignal(timeout = TimeSpan.fromSeconds(30)) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const controller = new EnhancedAbortController().abortAfter(timeout);
+    req.signal = controller.signal;
+    res.on('close', () => {
+      if (!res.writableFinished) controller.abort(new Error('client disconnected'));
+      controller.dispose(); // response done either way: release the timer
+    });
+    next();
+  };
+}
+
+app.use(requestSignal());
+
+app.get('/report', async (req, res, next) => {
+  try {
+    const rows = await db.query('select ...', { signal: req.signal });
+    const enriched = await fetch(`${API}/enrich`, { method: 'POST', body: JSON.stringify(rows), signal: req.signal });
+    res.json(await enriched.json());
+  } catch (error) {
+    if (!isAbortError(error)) return next(error);
+    if (res.headersSent || res.destroyed) return; // the client is gone: nobody to answer
+    res.status(isTimeoutError(error) ? 504 : 499).end();
+  }
+});
+```
+  </TabItem>
+  <TabItem label="Fastify">
+```ts title="request-signal.ts"
+import Fastify from 'fastify';
+import { EnhancedAbortController, TimeSpan, isAbortError, isTimeoutError } from '@ylcnfrht/enhanced-abort-controller';
+
+declare module 'fastify' {
+  interface FastifyRequest { signal: AbortSignal }
+}
+
+const app = Fastify();
+app.decorateRequest('signal', null as unknown as AbortSignal);
+
+app.addHook('onRequest', async (request, reply) => {
+  const controller = new EnhancedAbortController().abortAfter(TimeSpan.fromSeconds(30));
+  request.signal = controller.signal;
+  reply.raw.on('close', () => {
+    if (!reply.raw.writableFinished) controller.abort(new Error('client disconnected'));
+    controller.dispose();
+  });
+});
+
+app.get('/report', async (request, reply) => {
+  try {
+    return await buildReport({ signal: request.signal });
+  } catch (error) {
+    if (!isAbortError(error)) throw error;
+    return reply.code(isTimeoutError(error) ? 504 : 499).send();
+  }
+});
+```
+  </TabItem>
+</Tabs>
+
+Notes:
+
+- The disconnect reason is an `Error('client disconnected')`, not an abort error. fetch and most drivers reject with it as is, so `isAbortError` is false for it. The handler above checks `res.destroyed` for that case; alternatively abort with `new AbortError('client disconnected')`, which `isAbortError` recognises.
+- `499` is nginx's "client closed request"; nobody reads it, but it keeps logs honest.
+- Pass `req.signal` to everything: database drivers (`pg`, `mysql2`, MongoDB, Prisma's interactive transactions where supported), HTTP clients, `fs`, child processes. A driver that ignores signals keeps running; the response is still skipped.
+
+## Per-step deadlines inside a request
+
+Give a slow dependency its own budget without losing the request's cancellation:
+
+```ts
+app.get('/dashboard', async (req, res) => {
+  using recommendations = EnhancedAbortController.createLinkedController(req.signal).abortAfter(800);
+  const [user, recs] = await Promise.all([
+    loadUser(req.params.id, { signal: req.signal }),
+    loadRecommendations({ signal: recommendations.signal }).catch(() => []), // optional: give up after 800 ms
+  ]);
+  res.json({ user, recs });
+});
+```
+
+More in [Per-step deadlines](/guides/per-step-deadlines/).
+
+## Server shutdown
+
+Link each request to an app-wide shutdown controller so in-flight work stops on SIGTERM:
+
+```ts
+const shutdown = new EnhancedAbortController();
+process.once('SIGTERM', () => {
+  shutdown.abort(new Error('server shutting down'));
+  server.close();
+});
+
+// in the middleware:
+const controller = EnhancedAbortController.createLinkedController(shutdown.signal).abortAfter(timeout);
+```
+
+Disposing the per-request controller on `close` removes its listener from `shutdown.signal`, so the shutdown signal doesn't collect one listener per request ever served.

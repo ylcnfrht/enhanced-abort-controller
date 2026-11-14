@@ -1,0 +1,48 @@
+---
+title: Introduction
+description: What @ylcnfrht/enhanced-abort-controller is, what it adds to AbortController, and when to use it.
+sidebar:
+  order: 1
+---
+
+import { LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+`@ylcnfrht/enhanced-abort-controller` is an `AbortController` with the parts of .NET's `CancellationTokenSource` that the platform doesn't have: a deadline you can move, callbacks you can unregister, linked controllers that clean up after themselves, and a `TimeSpan` type.
+
+The key design rule of 2.0: **`controller.signal` is a real `AbortSignal`**. `EnhancedAbortController` extends `AbortController`, so every API that takes a signal (fetch, `fs/promises`, streams, `timers/promises`, `AbortSignal.any`, database drivers) accepts it unchanged.
+
+```ts twoslash
+declare const url: string;
+// ---cut---
+import { EnhancedAbortController, TimeSpan, isAbortError, isTimeoutError } from '@ylcnfrht/enhanced-abort-controller';
+
+using controller = new EnhancedAbortController().abortAfter(TimeSpan.fromSeconds(5));
+
+try {
+  const response = await fetch(url, { signal: controller.signal });
+  console.log(await response.json());
+} catch (error) {
+  if (!isAbortError(error)) throw error;
+  console.log(isTimeoutError(error) ? 'timed out' : 'cancelled');
+}
+```
+
+## What you get
+
+- **`abortAfter(delay)`**: like .NET's `CancelAfter`. Calling it again replaces the deadline, `Infinity` cancels it. The reason is a `TimeoutError`, as with `AbortSignal.timeout`.
+- **Linked controllers**: `createLinkedController(request.signal)` aborts with the parent's reason and removes its listener from the parent when it aborts or is disposed.
+- **`register(signal, cb)`** and **`whenAborted(signal)`** for any `AbortSignal`, with a disposable handle and the reason passed in.
+- **`dispose()` / `using`**: release the timer and links without aborting.
+- **`isAbortError` / `isTimeoutError`**: classify what fetch and friends reject with.
+- **`TimeSpan`**: `TimeSpan.fromMinutes(2)` instead of `120000`, validated.
+
+Zero dependencies, ESM and CommonJS, Node 20 or later, Bun, Deno and modern browsers.
+
+## When not to use it
+
+If one fixed timeout per operation is all you need, `AbortSignal.timeout(ms)` is built in. If you only combine signals, `AbortSignal.any()` is built in. [Why this library](/start/why/) compares them honestly.
+
+<CardGrid>
+  <LinkCard title="Quick start" href="/start/quick-start/" description="Five minutes from install to a fetch with a resettable deadline." />
+  <LinkCard title="Upgrading from 1.x" href="/migration/v1-to-v2/" description="2.0 is a redesign: what changed and a checklist." />
+</CardGrid>

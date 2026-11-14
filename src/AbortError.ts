@@ -1,42 +1,51 @@
 /**
- * Error thrown when an operation is aborted.
- * 
- * This error is thrown when an operation is cancelled or aborted,
- * typically through an EnhancedAbortSignal.
- * 
+ * An error for aborted work, for code that wants to throw its own. Platform APIs (fetch, timers,
+ * `signal.throwIfAborted()`) reject with the signal's reason instead, usually a `DOMException`
+ * named `AbortError` or `TimeoutError`; use {@link isAbortError} to recognise all of them.
+ */
+export class AbortError extends Error {
+  override name = 'AbortError';
+
+  constructor(message = 'The operation was aborted.', options?: { cause?: unknown }) {
+    super(message, options);
+  }
+}
+
+/**
+ * True for every way an aborted operation fails: this library's {@link AbortError}, and any error
+ * named `AbortError` or `TimeoutError` (the `DOMException`s that fetch, `AbortSignal.timeout`,
+ * `abortAfter` and `throwIfAborted` produce).
+ *
  * @example
- * ```typescript
- * const controller = new EnhancedAbortController();
- * 
+ * ```ts
  * try {
- *   controller.signal.throwIfAborted();
- *   // Continue with work...
+ *   await fetch(url, { signal: controller.signal });
  * } catch (error) {
- *   if (error instanceof AbortError) {
- *     console.log('Operation was aborted:', error.message);
- *   }
+ *   if (isAbortError(error)) return; // cancelled or timed out
+ *   throw error;
  * }
  * ```
  */
-export class AbortError extends Error {
-  /**
-   * Creates a new AbortError instance.
-   * 
-   * @param message - Optional error message. Defaults to 'The operation was aborted.'
-   * 
-   * @example
-   * ```typescript
-   * // With default message
-   * const error1 = new AbortError();
-   * console.log(error1.message); // 'The operation was aborted.'
-   * 
-   * // With custom message
-   * const error2 = new AbortError('User cancelled the operation');
-   * console.log(error2.message); // 'User cancelled the operation'
-   * ```
-   */
-  constructor(message = 'The operation was aborted.') {
-    super(message);
-    this.name = 'AbortError';
+export function isAbortError(error: unknown): boolean {
+  if (error instanceof AbortError) return true;
+  const name = typeof error === 'object' && error !== null ? (error as { name?: unknown }).name : undefined;
+  return name === 'AbortError' || name === 'TimeoutError';
+}
+
+/**
+ * True if `error` is a timeout: a `TimeoutError` from `abortAfter`, `timeout()` or `AbortSignal.timeout`,
+ * also when wrapped: Node core APIs (fs/promises, timers/promises, streams, events.once) reject with an
+ * `AbortError` whose `cause` is the signal's reason.
+ */
+export function isTimeoutError(error: unknown): boolean {
+  for (let current = error, depth = 0; typeof current === 'object' && current !== null && depth < 5; depth++) {
+    if ((current as { name?: unknown }).name === 'TimeoutError') return true;
+    current = (current as { cause?: unknown }).cause;
   }
+  return false;
+}
+
+/** The reason used when a scheduled abort fires, matching `AbortSignal.timeout`. @internal */
+export function timeoutReason(): DOMException {
+  return new DOMException('The operation timed out.', 'TimeoutError');
 }

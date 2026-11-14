@@ -1,0 +1,48 @@
+---
+title: Why this library
+description: What AbortController, AbortSignal.timeout and AbortSignal.any already do, and the gaps this library fills.
+sidebar:
+  order: 4
+---
+
+The platform has good cancellation primitives. Use them when they are enough. This page says where they stop.
+
+## What the platform already does
+
+| You need | Built in | Notes |
+|---|---|---|
+| Cancel an operation | `new AbortController()`, `controller.abort(reason)` | Every signal-aware API supports it. |
+| One fixed timeout | `AbortSignal.timeout(ms)` | Aborts with a `TimeoutError`; the timer doesn't keep Node alive. |
+| Combine signals | `AbortSignal.any([a, b])` | Forwards the first reason; links are released when the result is garbage-collected. |
+| Throw if aborted | `signal.throwIfAborted()` | Throws `signal.reason`. |
+| Listen | `signal.addEventListener('abort', fn, { once: true })` | |
+
+If your code is "one request, one fixed timeout", `fetch(url, { signal: AbortSignal.timeout(5000) })` is all you need.
+
+## Where it stops
+
+**A timeout you can't move.** `AbortSignal.timeout` is fixed at creation. Idle timeouts, heartbeats and "extend while making progress" need a deadline you can reset or cancel. `abortAfter()` does that, on a controller you can also abort by hand.
+
+**A timeout and a manual cancel together.** With the platform, that is `AbortSignal.any([controller.signal, AbortSignal.timeout(ms)])`, two objects to keep. Here it is one controller: `new EnhancedAbortController().abortAfter(ms)`.
+
+**Listening is easy to get wrong.**
+
+- `addEventListener('abort', ...)` on a signal that has **already** aborted never fires. `register(signal, cb)` runs the callback immediately in that case.
+- Removing a listener needs the same function reference. `register` returns a handle: `unregister()`, or `using`.
+- `new Promise((r) => signal.addEventListener('abort', r))` never settles for an already-aborted signal. `whenAborted(signal)` resolves with the reason either way.
+
+**Deterministic cleanup of links.** `AbortSignal.any` releases its links when the combined signal is garbage-collected. That is fine for most code. `createLinkedController` gives you explicit control instead: its listeners are removed the moment it aborts or is disposed, and it can carry its own `abortAfter` deadline. Thousands of short-lived per-step controllers on one long-lived request signal leave nothing behind, which you can watch in the [linked-signals playground](/concepts/linked-controllers/).
+
+**Telling errors apart.** Fetch rejects with the signal's reason: a `DOMException` named `AbortError` or `TimeoutError`, or whatever you passed to `abort()`. `isAbortError(e)` and `isTimeoutError(e)` classify all of them.
+
+**Readable durations and validation.** `TimeSpan.fromMinutes(2)` instead of `120000`. `abortAfter(NaN)` or a negative delay throws a `RangeError` instead of firing at once, and delays longer than `setTimeout`'s 24.8-day limit work (the timer is chained).
+
+## What it doesn't do
+
+- It doesn't replace `AbortSignal`. There is no wrapper type: everything takes and returns real signals.
+- It doesn't make APIs cancellable. A function that ignores its signal keeps running; see [the fetch guide](/guides/fetch/) and [Node APIs](/guides/node-apis/) for what supports signals.
+- `dispose()` doesn't cancel anything. It releases resources, like .NET's `Dispose`. Call `abort()` to stop work.
+
+## Coming from .NET
+
+The model is `CancellationTokenSource`: `abortAfter` is `CancelAfter`, `createLinkedController` is `CreateLinkedTokenSource`, `register` is `Register`, `EnhancedAbortSignal.none` is `CancellationToken.None`. The [.NET mapping](/guides/dotnet/) has the full table.

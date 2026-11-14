@@ -1,0 +1,118 @@
+---
+title: Reasons & errors
+description: What a signal aborts with, what fetch and Node reject with, and how isAbortError, isTimeoutError and AbortError classify them.
+sidebar:
+  order: 3
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Every aborted signal has a `reason`. APIs that take a signal reject with that reason, unchanged. So the reason decides what your `catch` sees.
+
+| How it aborted | `signal.reason` |
+|---|---|
+| `controller.abort()` | `DOMException`, name `AbortError` |
+| `controller.abort(myReason)` | `myReason`, as is (an `Error`, a string, anything) |
+| `abortAfter` / `timeout()` deadline | `DOMException`, name `TimeoutError` |
+| A linked controller whose parent aborted | The parent's reason, the same object |
+| `AbortSignal.timeout` | `DOMException`, name `TimeoutError` |
+
+Reasons are never stringified or rewrapped. `throwIfAborted()` (native) throws the reason too.
+
+What an API **rejects** with is up to the API:
+
+| API | Rejects with |
+|---|---|
+| `fetch`, `throwIfAborted()`, most libraries | `signal.reason` itself |
+| Node core: `fs/promises`, `timers/promises`, `stream`, `events.once`, `child_process` | Node's own `AbortError` (`code: 'ABORT_ERR'`), with `signal.reason` as its `cause` |
+
+## Classify with isAbortError and isTimeoutError
+
+```ts twoslash
+declare const url: string;
+// ---cut---
+import { EnhancedAbortController, isAbortError, isTimeoutError } from '@ylcnfrht/enhanced-abort-controller';
+
+using controller = new EnhancedAbortController().abortAfter(3000);
+try {
+  await fetch(url, { signal: controller.signal });
+} catch (error) {
+  if (!isAbortError(error)) throw error; // a real failure: DNS, 500 handling, a bug
+  if (isTimeoutError(error)) console.log('took too long');
+  else console.log('cancelled');
+}
+```
+
+- [`isAbortError(e)`](/api/functions/isaborterror/) is `true` for the library's `AbortError` and for **any** error whose `name` is `AbortError` or `TimeoutError`: the `DOMException`s from fetch, `AbortSignal.timeout`, `abortAfter` and `throwIfAborted()`, and Node's own `AbortError` from `fs`, `timers/promises` and streams.
+- [`isTimeoutError(e)`](/api/functions/istimeouterror/) is `true` for errors named `TimeoutError`, also when they are the `cause` of another error, as with Node core APIs, which wrap the reason.
+
+```ts twoslash
+import { EnhancedAbortController, isAbortError, isTimeoutError } from '@ylcnfrht/enhanced-abort-controller';
+import { setTimeout as sleep } from 'node:timers/promises';
+// ---cut---
+using controller = new EnhancedAbortController().abortAfter(100);
+try {
+  await sleep(1000, undefined, { signal: controller.signal });
+} catch (error) {
+  if (!isAbortError(error)) throw error; // Node's AbortError: true
+  isTimeoutError(error); // true: the TimeoutError is error.cause, and cause is followed
+}
+```
+
+<Aside type="caution" title="A custom reason is not an abort error">
+  `controller.abort(new Error('user left'))` makes fetch reject with that `Error`. `isAbortError` returns `false` for it, because its name is
+  `Error`. If you abort with your own reasons, either check `signal.aborted` in the `catch`, or use an `AbortError` as the reason (below).
+</Aside>
+
+```ts twoslash
+import { EnhancedAbortController } from '@ylcnfrht/enhanced-abort-controller';
+declare function work(signal: AbortSignal): Promise<void>;
+// ---cut---
+async function run(controller: EnhancedAbortController) {
+  try {
+    await work(controller.signal);
+  } catch (error) {
+    if (controller.signal.aborted) return; // whatever the reason was, we stopped it on purpose
+    throw error;
+  }
+}
+```
+
+Why not `instanceof`? `DOMException`, Node's internal `AbortError` and this library's `AbortError` are different classes. Checking the name covers all of them.
+
+## AbortError
+
+[`AbortError`](/api/classes/aborterror/) is a plain `Error` subclass with `name = 'AbortError'`, for code that wants to throw or abort with its own abort error. Platform APIs don't throw it; they throw the signal's reason.
+
+```ts twoslash
+import { AbortError, EnhancedAbortController, isAbortError } from '@ylcnfrht/enhanced-abort-controller';
+declare const socketError: Error;
+// ---cut---
+const controller = new EnhancedAbortController();
+controller.abort(new AbortError('Client disconnected', { cause: socketError }));
+
+isAbortError(controller.reason); // true
+new AbortError().message; // 'The operation was aborted.'
+```
+
+## Writing a cancellable function
+
+Honour the signal the same way the platform does: check it up front, reject with `signal.reason` on abort, and remove your listener when done.
+
+```ts twoslash
+import { register } from '@ylcnfrht/enhanced-abort-controller';
+// ---cut---
+function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    signal?.throwIfAborted();
+    const timer = setTimeout(() => {
+      registration?.unregister();
+      resolve();
+    }, ms);
+    const registration = signal && register(signal, (reason) => {
+      clearTimeout(timer);
+      reject(reason);
+    });
+  });
+}
+```

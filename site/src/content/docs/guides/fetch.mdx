@@ -1,0 +1,122 @@
+---
+title: fetch
+description: Deadlines, cancel buttons, idle timeouts and retries for fetch, including the response body, with real AbortSignals.
+sidebar:
+  order: 1
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+fetch takes `controller.signal` directly and rejects with `signal.reason` when it aborts.
+
+## A deadline for the whole exchange
+
+```ts twoslash
+import { EnhancedAbortController, TimeSpan, isAbortError, isTimeoutError } from '@ylcnfrht/enhanced-abort-controller';
+// ---cut---
+async function getJson<T>(url: string): Promise<T | undefined> {
+  using controller = new EnhancedAbortController().abortAfter(TimeSpan.fromSeconds(10));
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return (await response.json()) as T; // the body read is covered by the same deadline
+  } catch (error) {
+    if (isTimeoutError(error)) return undefined;
+    throw error;
+  }
+}
+```
+
+<Aside type="caution">
+  The signal also covers reading the body. Keep `await response.json()` inside the block, before the controller is disposed. Disposing doesn't abort, but it
+  does clear the deadline.
+</Aside>
+
+## Cancel button plus deadline
+
+One controller does both: no `AbortSignal.any` needed.
+
+```ts twoslash
+import { EnhancedAbortController, isAbortError } from '@ylcnfrht/enhanced-abort-controller';
+declare const cancelButton: HTMLButtonElement;
+declare function render(data: unknown): void;
+// ---cut---
+const controller = new EnhancedAbortController().abortAfter(15_000);
+cancelButton.onclick = () => controller.abort();
+
+try {
+  render(await (await fetch('/api/export', { signal: controller.signal })).json());
+} catch (error) {
+  if (!isAbortError(error)) throw error;
+} finally {
+  controller.dispose();
+}
+```
+
+## Superseded requests (search as you type)
+
+Abort the previous request when a new one starts:
+
+```ts twoslash
+import { EnhancedAbortController, isAbortError } from '@ylcnfrht/enhanced-abort-controller';
+declare function show(results: unknown): void;
+// ---cut---
+let current: EnhancedAbortController | undefined;
+
+async function search(query: string) {
+  current?.abort();
+  const controller = (current = new EnhancedAbortController().abortAfter(5000));
+  try {
+    const response = await fetch(`/search?q=${encodeURIComponent(query)}`, { signal: controller.signal });
+    show(await response.json());
+  } catch (error) {
+    if (!isAbortError(error)) throw error;
+  } finally {
+    controller.dispose();
+  }
+}
+```
+
+## Idle timeout on a streamed body
+
+Allow a long download, but abort if no bytes arrive for 10 seconds:
+
+```ts twoslash
+import { EnhancedAbortController, TimeSpan } from '@ylcnfrht/enhanced-abort-controller';
+// ---cut---
+async function download(url: string): Promise<number> {
+  using idle = new EnhancedAbortController().abortAfter(TimeSpan.fromSeconds(10));
+  const response = await fetch(url, { signal: idle.signal });
+  let bytes = 0;
+  for await (const chunk of response.body!) {
+    bytes += chunk.byteLength;
+    idle.abortAfter(TimeSpan.fromSeconds(10)); // progress: reset the deadline
+  }
+  return bytes;
+}
+```
+
+## Retries with a per-attempt deadline and an overall budget
+
+```ts twoslash
+import { EnhancedAbortController, TimeSpan, isAbortError, isTimeoutError } from '@ylcnfrht/enhanced-abort-controller';
+// ---cut---
+async function fetchWithRetry(url: string, signal?: AbortSignal): Promise<Response> {
+  using overall = EnhancedAbortController.createLinkedController(signal).abortAfter(TimeSpan.fromSeconds(30));
+  for (let attempt = 1; ; attempt++) {
+    using perTry = EnhancedAbortController.createLinkedController(overall.signal).abortAfter(TimeSpan.fromSeconds(5));
+    try {
+      return await fetch(url, { signal: perTry.signal });
+    } catch (error) {
+      // Give up on real errors, on the caller's cancel and on the overall budget; retry only a per-attempt timeout.
+      if (!isTimeoutError(error) || overall.signal.aborted || attempt === 3) throw error;
+    }
+  }
+}
+```
+
+Here the per-attempt child times out with its own `TimeoutError` while `overall` stays live; when `overall` (or the caller's signal) aborts, its reason flows into the child and the loop stops.
+
+## Errors
+
+fetch rejects with the signal's reason: `TimeoutError` for deadlines, `AbortError` for `abort()`, or your custom reason. Classify with `isAbortError` / `isTimeoutError`; see [Reasons & errors](/concepts/reasons-and-errors/).

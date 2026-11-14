@@ -1,51 +1,23 @@
 /**
- * Enhanced Abort Controller Library
- *
- * A TypeScript library providing enhanced AbortController functionality
- * with Node.js-style patterns for modern applications.
- *
- * This library exports the following main classes:
- * - {@link EnhancedAbortController} - Enhanced abort controller with timeout and disposal support
- * - {@link EnhancedAbortSignal} - Enhanced abort signal with registration and promise support
- * - {@link AbortError} - Error thrown when operations are aborted
- * - {@link AbortRegistration} - Registration for abort signal callbacks
- * - {@link TimeSpan} - Time interval representation for precise time management
+ * `AbortController` with .NET `CancellationTokenSource` powers. The signal stays a real `AbortSignal`.
  *
  * @example
- * ```typescript
- * import {
- *   EnhancedAbortController,
- *   EnhancedAbortSignal,
- *   AbortError,
- *   TimeSpan
- * } from '@ylcnfrht/enhanced-abort-controller';
+ * ```ts
+ * import { EnhancedAbortController, TimeSpan, isAbortError } from '@ylcnfrht/enhanced-abort-controller';
  *
- * // Create a controller with timeout
- * const controller = new EnhancedAbortController();
- * controller.abortAfter(5000); // Abort after 5 seconds
- *
- * // Use in async operations
- * async function doWork(signal: EnhancedAbortSignal) {
- *   for (let i = 0; i < 10; i++) {
- *     signal.throwIfAborted();
- *     console.log(`Working... ${i}`);
- *     await new Promise(resolve => setTimeout(resolve, 1000));
- *   }
+ * using controller = new EnhancedAbortController().abortAfter(TimeSpan.fromSeconds(5));
+ * try {
+ *   const response = await fetch(url, { signal: controller.signal });
+ * } catch (error) {
+ *   if (!isAbortError(error)) throw error;
  * }
- *
- * doWork(controller.signal).catch(err => {
- *   if (err instanceof AbortError) {
- *     console.log('Operation was aborted');
- *   }
- * });
  * ```
  *
  * @packageDocumentation
  */
-
-// Main exports
-export { EnhancedAbortController } from './EnhancedAbortController';
-export { EnhancedAbortSignal } from './EnhancedAbortSignal';
-export { AbortError } from './AbortError';
-export { AbortRegistration } from './AbortRegistration';
-export { TimeSpan } from './TimeSpan';
+export { EnhancedAbortController, type Delay, type EnhancedSignal } from './EnhancedAbortController.ts';
+export { EnhancedAbortSignal } from './EnhancedAbortSignal.ts';
+export { AbortError, isAbortError, isTimeoutError } from './AbortError.ts';
+export { AbortRegistration } from './AbortRegistration.ts';
+export { register, whenAborted } from './register.ts';
+export { TimeSpan } from './TimeSpan.ts';

@@ -1,0 +1,53 @@
+---
+title: TimeSpan
+description: An immutable, validated time interval modeled on .NET TimeSpan, accepted everywhere a delay is.
+sidebar:
+  order: 7
+---
+
+[`TimeSpan`](/api/classes/timespan/) is an immutable interval stored in milliseconds. Every API that takes a delay (`abortAfter`, `timeout`, `EnhancedAbortSignal.timeout`) accepts a number of milliseconds or a `TimeSpan`.
+
+```ts twoslash
+import { EnhancedAbortController, TimeSpan } from '@ylcnfrht/enhanced-abort-controller';
+// ---cut---
+const controller = new EnhancedAbortController().abortAfter(TimeSpan.fromSeconds(30));
+
+const span = TimeSpan.fromMinutes(1).add(TimeSpan.fromSeconds(30));
+span.totalSeconds; // 90
+span.milliseconds; // 90000
+String(span); // '90000ms'
++span; // 90000 (valueOf)
+span > TimeSpan.fromMinutes(1); // true
+```
+
+## API
+
+| Create | |
+|---|---|
+| `new TimeSpan(ms)`, `TimeSpan.fromMilliseconds(ms)` | |
+| `fromSeconds`, `fromMinutes`, `fromHours`, `fromDays` | Fractions allowed: `fromHours(1.5)` |
+
+| Read | |
+|---|---|
+| `milliseconds` | The stored value |
+| `totalSeconds`, `totalMinutes`, `totalHours`, `totalDays` | Whole and fractional |
+
+| Combine and compare | |
+|---|---|
+| `add(other)`, `subtract(other)` | New `TimeSpan`s |
+| `equals(other)` | Same length |
+| `compareTo(other)` | -1, 0 or 1 |
+| `valueOf()` | Milliseconds, so `<`, `>` and `+span` work |
+| `toString()` | `"1500ms"` |
+
+| Constants | |
+|---|---|
+| `TimeSpan.zero` | 0 ms |
+| `TimeSpan.infinite` | -1 ms, .NET's `Timeout.InfiniteTimeSpan`: `abortAfter(TimeSpan.infinite)` cancels a deadline |
+| `TimeSpan.maxValue`, `TimeSpan.minValue` | ±`Number.MAX_SAFE_INTEGER` ms (about 285,616 years) |
+
+## Validation
+
+Every factory throws a `RangeError` for `NaN` and `±Infinity`: `TimeSpan.fromSeconds(NaN)` fails where it is written, not later as an instant abort.
+
+`TimeSpan` itself allows negatives (for arithmetic), but a delay must be non-negative: `abortAfter(TimeSpan.fromSeconds(-5))` throws a `RangeError`. The one exception is -1 ms (`TimeSpan.infinite`), which means "no deadline".

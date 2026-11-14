@@ -1,0 +1,35 @@
+---
+title: Changelog
+description: Release history of @ylcnfrht/enhanced-abort-controller.
+sidebar:
+  order: 3
+---
+
+## 2.0.0
+
+A redesign around the native `AbortSignal`. See [Upgrading from 1.x](/migration/v1-to-v2/) for the full before/after table.
+
+**Breaking**
+
+- `EnhancedAbortController` extends `AbortController`; `controller.signal` is the native `AbortSignal` (no `signal.signal`).
+- `EnhancedAbortSignal` is a helper object of functions for any `AbortSignal`, not a wrapper class.
+- `throwIfAborted()` is the native one and throws the reason.
+- Timeouts abort with a `TimeoutError` `DOMException`.
+- `dispose()` releases resources and does not abort; `abort()` works after it; `abortAfter()` after it throws.
+- Invalid delays (`NaN`, negative other than -1) throw `RangeError`.
+- `abortAfter` timers are unref'd.
+
+**New**
+
+- `abortAfter()` is chainable, accepts `TimeSpan`, resets like `CancelAfter`, cancels with `Infinity` / -1 / `TimeSpan.infinite`, and supports delays over 24.8 days.
+- Linked controllers forward the parent's reason, remove their parent listeners on abort or dispose, and skip `undefined` / `null` / `none`.
+- Standalone `register(signal, cb)` and `whenAborted(signal)` for any signal; callbacks receive the reason; `AbortRegistration` supports `using`.
+- `isAbortError`, `isTimeoutError`; `AbortError` takes a `cause`.
+- `EnhancedAbortSignal.timeout` and `.any` build on the native implementations; `none` is one shared signal that never collects listeners.
+- `TimeSpan`: `add`, `subtract`, `equals`, `compareTo`, `valueOf`, `toString`, `infinite`; validation.
+- `using` support for controllers and registrations.
+- ESM and CommonJS builds; zero dependencies; Node 20+.
+
+## 1.1.0 and earlier
+
+The wrapper-based API. Its signal could not be passed to platform APIs directly, and `dispose()` was documented as aborting. Superseded by 2.0.

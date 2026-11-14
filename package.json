@@ -1,51 +1,77 @@
 {
   "name": "@ylcnfrht/enhanced-abort-controller",
-  "version": "1.1.0",
-  "description": "Enhanced AbortController with Node.js-style patterns for modern applications",
-  "main": "dist/src/index.js",
-  "types": "dist/src/index.d.ts",
-  "scripts": {
-    "build": "tsc",
-    "dev": "tsc --watch",
-    "test": "jest",
-    "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage",
-    "lint": "eslint src/**/*.ts",
-    "clean": "rm -rf dist",
-    "prepublishOnly": "npm run clean && npm run build"
-  },
+  "version": "2.0.0",
+  "description": "AbortController with .NET CancellationTokenSource powers: resettable abortAfter, disposable register(), whenAborted, linked controllers that clean up, TimeSpan. The signal is a real AbortSignal, so fetch and every AbortSignal API accept it. Zero dependencies.",
   "keywords": [
-    "abort-controller",
+    "abortcontroller",
+    "abortsignal",
+    "abort",
     "cancellation",
-    "async",
+    "cancellation-token",
+    "cancellationtokensource",
+    "timeout",
+    "abort-after",
+    "linked-signals",
+    "fetch",
+    "timespan",
+    "dotnet",
     "typescript",
-    "async-cancellation"
+    "zero-dependencies"
   ],
-  "author": "ylcnfrht",
   "license": "MIT",
-  "devDependencies": {
-    "@types/jest": "^29.5.0",
-    "@types/node": "^24.1.0",
-    "@typescript-eslint/eslint-plugin": "^6.0.0",
-    "@typescript-eslint/parser": "^6.0.0",
-    "eslint": "^8.0.0",
-    "jest": "^29.5.0",
-    "ts-jest": "^29.1.0",
-    "typescript": "^5.0.0"
-  },
-  "files": [
-    "dist/**/*"
-  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ylcnfrht/enhanced-abort-controller.git"
   },
-  "dependencies": {},
+  "homepage": "https://enhanced-abort-controller.ferhatyalcin.dev",
   "bugs": {
     "url": "https://github.com/ylcnfrht/enhanced-abort-controller/issues"
   },
-  "homepage": "https://ylcnfrht.github.io/enhanced-abort-controller/",
+  "author": {
+    "name": "ylcnfrht",
+    "url": "https://github.com/ylcnfrht"
+  },
+  "type": "module",
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/cjs/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/esm/index.d.ts",
+        "default": "./dist/esm/index.js"
+      },
+      "require": {
+        "types": "./dist/cjs/index.d.ts",
+        "default": "./dist/cjs/index.js"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20"
+  },
   "publishConfig": {
     "access": "public"
+  },
+  "scripts": {
+    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json && tsc -p tsconfig.cjs.json && node -e \"require('fs').writeFileSync('dist/cjs/package.json','{\\\"type\\\":\\\"commonjs\\\"}')\"",
+    "typecheck": "tsc",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:dist": "npm run build && node test/dist/smoke.mjs && node test/dist/smoke.cjs && node examples/4-commonjs.cjs | grep -q 'aborted: timed out' && echo 'dist ok'",
+    "check:package": "npm run build && npx -y publint --strict && npx -y @arethetypeswrong/cli --pack .",
+    "prepublishOnly": "npm run typecheck && npm run test:coverage && npm run test:dist"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@vitest/coverage-v8": "^5.1.0",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
   }
 }

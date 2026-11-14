@@ -1,117 +1,39 @@
 /**
- * Represents a registration for an abort signal callback.
- * 
- * This class provides a way to manage callback registrations for abort signals,
- * allowing for proper cleanup and disposal of resources.
- * 
+ * A callback registered on a signal with `register()`. Unregister it when the work it guards is
+ * done, so long-lived signals don't collect listeners. Supports `using`.
+ *
  * @example
- * ```typescript
- * const controller = new EnhancedAbortController();
- * 
- * const registration = controller.signal.register(() => {
- *   console.log('Operation was aborted!');
- * });
- * 
- * // Later, unregister the callback
- * registration.unregister();
- * 
- * // Or dispose the registration
- * registration.dispose();
+ * ```ts
+ * using registration = register(signal, () => socket.destroy());
+ * await doWork(); // the callback is removed when this block exits
  * ```
  */
-export class AbortRegistration {
-  private disposed = false;
-  private unregisterCallback?: () => void;
+export class AbortRegistration implements Disposable {
+  #unregister: (() => void) | undefined;
 
-  /**
-   * Creates a new AbortRegistration instance.
-   * 
-   * @param unregisterCallback - The callback to execute when unregistering
-   * 
-   * @example
-   * ```typescript
-   * const registration = new AbortRegistration(() => {
-   *   console.log('Unregistering callback');
-   * });
-   * ```
-   */
-  constructor(unregisterCallback: () => void) {
-    this.unregisterCallback = unregisterCallback;
+  /** @internal Created by `register()`. */
+  constructor(unregister: (() => void) | undefined) {
+    this.#unregister = unregister;
   }
 
-  /**
-   * Unregisters the callback from the abort signal.
-   * 
-   * This method calls the unregister callback and marks the registration as disposed.
-   * Subsequent calls to unregister or dispose will have no effect.
-   * 
-   * @example
-   * ```typescript
-   * const controller = new EnhancedAbortController();
-   * 
-   * const registration = controller.signal.register(() => {
-   *   console.log('Aborted!');
-   * });
-   * 
-   * // Unregister the callback
-   * registration.unregister();
-   * 
-   * // Subsequent calls have no effect
-   * registration.unregister(); // No-op
-   * ```
-   */
+  /** True once unregistered, once the callback has run, or if the signal had already aborted when it was registered. */
+  get isDisposed(): boolean {
+    return this.#unregister === undefined;
+  }
+
+  /** Removes the callback. Safe to call more than once. */
   unregister(): void {
-    if (!this.disposed && this.unregisterCallback) {
-      this.unregisterCallback();
-      this.unregisterCallback = undefined;
-      this.disposed = true;
-    }
+    const unregister = this.#unregister;
+    this.#unregister = undefined;
+    unregister?.();
   }
 
-  /**
-   * Disposes the registration and unregisters the callback.
-   * 
-   * This method is equivalent to calling unregister().
-   * 
-   * @example
-   * ```typescript
-   * const controller = new EnhancedAbortController();
-   * 
-   * const registration = controller.signal.register(() => {
-   *   console.log('Aborted!');
-   * });
-   * 
-   * // Dispose the registration
-   * registration.dispose();
-   * 
-   * // Subsequent calls have no effect
-   * registration.dispose(); // No-op
-   * ```
-   */
+  /** Same as {@link unregister}. */
   dispose(): void {
     this.unregister();
   }
 
-  /**
-   * Gets whether the registration has been disposed.
-   * 
-   * @returns True if the registration has been disposed, false otherwise
-   * 
-   * @example
-   * ```typescript
-   * const controller = new EnhancedAbortController();
-   * 
-   * const registration = controller.signal.register(() => {
-   *   console.log('Aborted!');
-   * });
-   * 
-   * console.log(registration.isDisposed); // false
-   * 
-   * registration.unregister();
-   * console.log(registration.isDisposed); // true
-   * ```
-   */
-  get isDisposed(): boolean {
-    return this.disposed;
+  [Symbol.dispose](): void {
+    this.unregister();
   }
-} 
+}

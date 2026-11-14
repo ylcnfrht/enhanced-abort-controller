@@ -1,0 +1,70 @@
+---
+title: Linked controllers
+description: createLinkedController aborts with its parent's reason, can carry its own deadline, and removes its parent listeners when it aborts or is disposed.
+sidebar:
+  order: 5
+---
+
+import { Aside } from '@astrojs/starlight/components';
+import LinkedSignals from '../../../components/LinkedSignals.tsx';
+
+`EnhancedAbortController.createLinkedController(...signals)` is .NET's `CreateLinkedTokenSource`. The new controller aborts as soon as **any** of the signals aborts, with **that signal's reason**. `linkSignals` is an alias.
+
+```ts twoslash
+import { EnhancedAbortController } from '@ylcnfrht/enhanced-abort-controller';
+declare const request: { signal: AbortSignal };
+declare function queryOrders(signal: AbortSignal): Promise<void>;
+// ---cut---
+{
+  // Stops when the request aborts, or after 2 s, whichever comes first.
+  using step = EnhancedAbortController.createLinkedController(request.signal).abortAfter(2000);
+  await queryOrders(step.signal);
+}
+```
+
+## Try it
+
+A request signal with three steps, each linked to it with its own deadline. Let a step time out, abort the parent, dispose a step, or create 1000 short-lived children, and watch the listener count on the parent.
+
+<LinkedSignals client:visible />
+
+## The rules
+
+- **Reason forwarding.** When a parent aborts, the child aborts with the parent's reason, the same object. A child that times out on its own has a `TimeoutError`.
+- **One way.** Aborting or disposing the child never touches the parents.
+- **Already aborted parent.** Linking to a signal that has already aborted gives a child that is aborted at once, with that reason.
+- **Clean-up.** The child puts one listener on each parent. All of them are removed when the child aborts (for any reason, including one parent aborting) or is disposed. Short-lived children on a long-lived parent leave nothing behind.
+- **Optional signals.** `undefined` and `null` entries are skipped, and so is `EnhancedAbortSignal.none`, so you can pass an optional caller signal straight in. With no signals left, the child is just a fresh controller.
+- **Subclasses.** Called on a subclass, `createLinkedController` and `timeout` return an instance of that subclass.
+
+```ts twoslash
+import { EnhancedAbortController } from '@ylcnfrht/enhanced-abort-controller';
+// ---cut---
+const parent = new AbortController();
+const child = EnhancedAbortController.createLinkedController(parent.signal);
+
+parent.abort(new Error('client disconnected'));
+child.reason === parent.signal.reason; // true
+
+async function load(id: string, signal?: AbortSignal) {
+  using local = EnhancedAbortController.createLinkedController(signal).abortAfter(5000); // signal may be undefined
+  return await fetch(`/items/${id}`, { signal: local.signal }); // await: dispose only after the fetch settles
+}
+```
+
+<Aside type="caution" title="A child you neither abort nor dispose">
+  It keeps its listener on the parent (and its pending timer) until the parent aborts or its own deadline fires. For per-request or per-step children, use
+  `using`, or call `dispose()` in a `finally`.
+</Aside>
+
+## createLinkedController or AbortSignal.any?
+
+Both forward the first reason. Pick by what you need:
+
+| | `createLinkedController` | `AbortSignal.any` / `EnhancedAbortSignal.any` |
+|---|---|---|
+| Result | A controller: you can `abort()` it and give it `abortAfter` | A signal only |
+| Parent listeners released | When it aborts or is disposed: deterministic | When the combined signal is garbage-collected |
+| Optional entries | Skipped | `EnhancedAbortSignal.any` skips them; native `AbortSignal.any` throws |
+
+[`EnhancedAbortSignal.any`](/concepts/real-signals/#enhancedabortsignal-helpers) delegates to native `AbortSignal.any`, so use it when you just need one signal from several.
