@@ -1,7 +1,9 @@
 ---
 /**
- * Hero backdrop: operations flowing towards a deadline in the middle. Most pass through (completed); some stop there,
- * coloured by outcome (timeout amber, cancel rose). Pure SVG + SMIL, deterministic layout, no JS.
+ * Hero backdrop: timelines and deadlines. Parallel tracks run left to right, each with a deadline tick. Work
+ * segments travel along them: most finish before their deadline (a small accent ring), some run into it and are
+ * cut with a TimeoutError (an amber ring at the tick), a few are cancelled mid-way (rose). Linked tracks are joined
+ * by sky-blue connectors that carry an abort from a parent to a child. Pure SVG + SMIL, deterministic, no JS.
  */
 interface Props {
   intensity?: 'hero' | 'quiet';
@@ -9,91 +11,113 @@ interface Props {
 const { intensity = 'hero' } = Astro.props;
 
 // Deterministic PRNG so the artwork is identical on every build.
-let seed = 7;
+let seed = 23;
 const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
 
 const W = 1440;
 const H = 760;
-const node = { x: 720, y: 380 };
 
-const lanes = Array.from({ length: 11 }, (_, i) => {
-  const y = 90 + i * 58 + (rand() - 0.5) * 18;
-  const outY = node.y + (y - node.y) * 0.55;
-  const inPath = `M -40 ${y.toFixed(1)} C ${(260 + rand() * 120).toFixed(1)} ${y.toFixed(1)}, ${(470 + rand() * 60).toFixed(1)} ${(node.y + (y - node.y) * 0.2).toFixed(1)}, ${node.x - 36} ${node.y}`;
-  const outPath = `M ${node.x + 36} ${node.y} C ${(930 + rand() * 60).toFixed(1)} ${(node.y + (outY - node.y) * 0.3).toFixed(1)}, ${(1150 + rand() * 80).toFixed(1)} ${outY.toFixed(1)}, ${W + 40} ${outY.toFixed(1)}`;
-  return { inPath, outPath, i };
+const tracks = Array.from({ length: 10 }, (_, i) => {
+  const y = 95 + i * 64;
+  // Deadlines cluster right of centre but never line up, like independent per-step timeouts.
+  const deadline = 760 + rand() * 520;
+  return { i, y, deadline };
 });
 
-type Pulse = { lane: number; kind: 'ok' | 'fail' | 'probe'; dur: number; begin: number };
-// ok = finished before the deadline (flows on); fail = timed out, probe = cancelled: they stop at the deadline.
-const pulses: Pulse[] = Array.from({ length: intensity === 'hero' ? 26 : 12 }, () => {
+// A few parent → child links between neighbouring tracks.
+const links = Array.from({ length: 4 }, (_, k) => {
+  const from = tracks[1 + k * 2];
+  const to = tracks[2 + k * 2];
+  const x = 300 + rand() * 420;
+  const d = `M ${x.toFixed(1)} ${from.y} C ${(x + 40).toFixed(1)} ${from.y}, ${(x + 30).toFixed(1)} ${to.y}, ${(x + 80).toFixed(1)} ${to.y}`;
+  return { k, d, dur: 3 + rand() * 3, begin: -rand() * 6 };
+});
+
+type Kind = 'done' | 'timeout' | 'cancel';
+const jobs = Array.from({ length: intensity === 'hero' ? 24 : 11 }, () => {
+  const track = tracks[Math.floor(rand() * tracks.length)];
   const r = rand();
-  return {
-    lane: Math.floor(rand() * lanes.length),
-    kind: r < 0.68 ? 'ok' : r < 0.9 ? 'fail' : 'probe',
-    dur: 3.2 + rand() * 2.6,
-    begin: -rand() * 8,
-  };
+  const kind: Kind = r < 0.55 ? 'done' : r < 0.85 ? 'timeout' : 'cancel';
+  const width = 50 + rand() * 110;
+  const stop =
+    kind === 'timeout' ? track.deadline : kind === 'done' ? track.deadline - 60 - rand() * 260 : 260 + rand() * (track.deadline - 360);
+  return { track, kind, width, stop, dur: 3.4 + rand() * 3, begin: -rand() * 10 };
 });
 
-const color = { ok: 'var(--io-callback)', fail: 'var(--io-timeout)', probe: 'var(--io-cancel)' };
+const color: Record<Kind, string> = { done: 'var(--io-accent)', timeout: 'var(--io-timeout)', cancel: 'var(--io-cancel)' };
+// Share of the cycle spent travelling; the rest is the ring and a quiet gap.
+const ARRIVE = 0.72;
 ---
 
-<svg class:list={['io-signal', intensity]} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+<svg class:list={['io-field', intensity]} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid slice" aria-hidden="true">
   <defs>
     <radialGradient id="io-glow" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="var(--io-accent)" stop-opacity="0.22"></stop>
+      <stop offset="0%" stop-color="var(--io-accent)" stop-opacity="0.2"></stop>
       <stop offset="60%" stop-color="var(--io-accent)" stop-opacity="0.04"></stop>
       <stop offset="100%" stop-color="var(--io-accent)" stop-opacity="0"></stop>
     </radialGradient>
-    <linearGradient id="io-fade-x" x1="0" x2="1">
+    <linearGradient id="io-job" x1="0" x2="1">
       <stop offset="0" stop-color="white" stop-opacity="0"></stop>
-      <stop offset="0.18" stop-color="white" stop-opacity="1"></stop>
-      <stop offset="0.82" stop-color="white" stop-opacity="1"></stop>
-      <stop offset="1" stop-color="white" stop-opacity="0"></stop>
+      <stop offset="1" stop-color="white" stop-opacity="1"></stop>
     </linearGradient>
-    <mask id="io-mask-x"><rect width={W} height={H} fill="url(#io-fade-x)"></rect></mask>
+    <mask id="io-job-mask" maskContentUnits="objectBoundingBox"><rect width="1" height="1" fill="url(#io-job)"></rect></mask>
   </defs>
 
+  <ellipse cx="720" cy="380" rx="420" ry="260" fill="url(#io-glow)"></ellipse>
 
-  <circle cx={node.x} cy={node.y} r="260" fill="url(#io-glow)"></circle>
-  <line x1={node.x} y1="40" x2={node.x} y2={H - 40} class="deadline"></line>
-
-  <g mask="url(#io-mask-x)" fill="none" stroke-linecap="round">
-    {lanes.map((l) => (
+  <g fill="none" stroke-linecap="round">
+    {tracks.map((t) => (
       <>
-        <path id={`io-in-${l.i}`} d={l.inPath} class="lane"></path>
-        <path id={`io-out-${l.i}`} d={l.outPath} class="lane out"></path>
+        <line x1="-20" y1={t.y} x2={W + 20} y2={t.y} class="track"></line>
+        <line x1={t.deadline.toFixed(1)} y1={t.y - 13} x2={t.deadline.toFixed(1)} y2={t.y + 13} class="deadline"></line>
       </>
     ))}
 
-    {pulses.map((p) => (
-      <g>
-        <circle r={p.kind === 'ok' ? 2.6 : 3} fill={color[p.kind]} class={`pulse ${p.kind}`}>
-          <animateMotion dur={`${p.dur}s`} begin={`${p.begin}s`} repeatCount="indefinite" keyPoints={p.kind === 'ok' ? '0;1' : '0;1'} keyTimes="0;1" calcMode="linear">
-            <mpath href={`#io-in-${p.lane}`}></mpath>
+    {links.map((l) => (
+      <>
+        <path id={`io-link-${l.k}`} d={l.d} class="link"></path>
+        <circle r="2.2" class="link-pulse" fill="var(--io-callback)" stroke="none">
+          <animateMotion dur={`${l.dur.toFixed(2)}s`} begin={`${l.begin.toFixed(2)}s`} repeatCount="indefinite">
+            <mpath href={`#io-link-${l.k}`}></mpath>
           </animateMotion>
-          {p.kind !== 'ok' && <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.85;1" dur={`${p.dur}s`} begin={`${p.begin}s`} repeatCount="indefinite"></animate>}
         </circle>
-        {p.kind === 'ok' && (
-          <circle r="2.6" fill={color.ok} class="pulse ok">
-            <animateMotion dur={`${(p.dur * 0.8).toFixed(2)}s`} begin={`${(p.begin + p.dur * 0.5).toFixed(2)}s`} repeatCount="indefinite">
-              <mpath href={`#io-out-${p.lane}`}></mpath>
-            </animateMotion>
-          </circle>
-        )}
-      </g>
+      </>
     ))}
   </g>
 
+  {jobs.map((j) => {
+    const dur = `${j.dur.toFixed(2)}s`;
+    const begin = `${j.begin.toFixed(2)}s`;
+    const startX = -j.width - 20;
+    const endX = j.stop - j.width;
+    return (
+      <g class={`job ${j.kind}`}>
+        <rect y={j.track.y - 1.5} height="3" width={j.width.toFixed(1)} rx="1.5" fill={color[j.kind]} mask="url(#io-job-mask)">
+          <animate
+            attributeName="x"
+            values={`${startX.toFixed(1)};${endX.toFixed(1)};${endX.toFixed(1)}`}
+            keyTimes={`0;${ARRIVE};1`}
+            dur={dur}
+            begin={begin}
+            repeatCount="indefinite"
+          ></animate>
+          <animate attributeName="opacity" values="0;1;1;0;0" keyTimes={`0;0.08;${ARRIVE};${ARRIVE + 0.06};1`} dur={dur} begin={begin} repeatCount="indefinite"></animate>
+        </rect>
+        <circle cx={j.stop.toFixed(1)} cy={j.track.y} r="0" fill="none" stroke={color[j.kind]} stroke-width="1.4">
+          <animate attributeName="r" values={`0;0;${j.kind === 'done' ? 9 : 16};${j.kind === 'done' ? 9 : 16}`} keyTimes={`0;${ARRIVE};${ARRIVE + 0.16};1`} dur={dur} begin={begin} repeatCount="indefinite"></animate>
+          <animate attributeName="opacity" values="0;0;0.9;0;0" keyTimes={`0;${ARRIVE - 0.001};${ARRIVE};${ARRIVE + 0.18};1`} dur={dur} begin={begin} repeatCount="indefinite"></animate>
+        </circle>
+      </g>
+    );
+  })}
 </svg>
 
 <style>
-  .io-signal {
-    /* Dot grid as one CSS background: ~1000 SVG circles cost seconds of main-thread render time. */
-    background: radial-gradient(circle, color-mix(in oklab, currentColor 45%, transparent) 1px, transparent 1.5px) 0 0 / 32px 32px;
-    -webkit-mask-image: radial-gradient(ellipse 60% 70% at 50% 50%, #000 0%, rgb(0 0 0 / 0.25) 70%, transparent 100%);
-    mask-image: radial-gradient(ellipse 60% 70% at 50% 50%, #000 0%, rgb(0 0 0 / 0.25) 70%, transparent 100%);
+  .io-field {
+    /* A faint vertical time grid instead of dots: one CSS background, no SVG cost. */
+    background: linear-gradient(90deg, color-mix(in oklab, currentColor 12%, transparent) 1px, transparent 1px) 0 0 / 64px 100%;
+    -webkit-mask-image: radial-gradient(ellipse 62% 70% at 50% 50%, #000 0%, rgb(0 0 0 / 0.25) 70%, transparent 100%);
+    mask-image: radial-gradient(ellipse 62% 70% at 50% 50%, #000 0%, rgb(0 0 0 / 0.25) 70%, transparent 100%);
     position: absolute;
     inset: 0;
     width: 100%;
@@ -101,29 +125,37 @@ const color = { ok: 'var(--io-callback)', fail: 'var(--io-timeout)', probe: 'var
     color: var(--io-text-faint);
     pointer-events: none;
   }
-  .io-signal.quiet {
+  .io-field.quiet {
     opacity: 0.55;
   }
-  .lane {
-    stroke: var(--io-hairline-strong);
+  .track {
+    stroke: color-mix(in oklab, var(--io-text-faint) 45%, transparent);
     stroke-width: 1;
   }
-  .lane.out {
-    stroke: color-mix(in oklab, var(--io-accent) 22%, transparent);
-  }
   .deadline {
-    stroke: color-mix(in oklab, var(--io-accent) 45%, transparent);
+    stroke: color-mix(in oklab, var(--io-timeout) 55%, transparent);
     stroke-width: 1.5;
-    stroke-dasharray: 6 6;
+    stroke-dasharray: 3 3;
   }
-  .pulse.ok {
-    filter: drop-shadow(0 0 6px var(--io-callback));
+  .link {
+    stroke: color-mix(in oklab, var(--io-callback) 30%, transparent);
+    stroke-width: 1;
   }
-  .pulse.fail {
+  .link-pulse {
+    filter: drop-shadow(0 0 5px var(--io-callback));
+  }
+  .job.done rect {
+    filter: drop-shadow(0 0 5px var(--io-accent));
+  }
+  .job.timeout rect {
     filter: drop-shadow(0 0 6px var(--io-timeout));
   }
+  .job.cancel rect {
+    filter: drop-shadow(0 0 6px var(--io-cancel));
+  }
   @media (prefers-reduced-motion: reduce) {
-    .pulse {
+    .job,
+    .link-pulse {
       display: none;
     }
   }
