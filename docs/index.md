@@ -2,7 +2,7 @@
 layout: home
 
 hero:
-  name: '@nodelibraries/enhanced-abort-controller'
+  name: '@ylcnfrht/enhanced-abort-controller'
   text: Enhanced AbortController
   tagline: |
     Enhanced AbortController with Node.js-style patterns for modern TypeScript applications.
@@ -15,7 +15,7 @@ hero:
       link: /guide/
     - theme: alt
       text: View on GitHub
-      link: https://github.com/nodelibraries/enhanced-abort-controller
+      link: https://github.com/ylcnfrht/enhanced-abort-controller
 
 features:
   - icon: 🎯
@@ -47,11 +47,11 @@ features:
 ## Quick Start
 
 ```bash
-npm install @nodelibraries/enhanced-abort-controller
+npm install @ylcnfrht/enhanced-abort-controller
 ```
 
 ```typescript
-import { EnhancedAbortController } from '@nodelibraries/enhanced-abort-controller';
+import { EnhancedAbortController } from '@ylcnfrht/enhanced-abort-controller';
 
 const controller = new EnhancedAbortController();
 controller.abortAfter(5000); // Abort after 5 seconds
@@ -66,9 +66,9 @@ fetch('https://api.example.com/data', {
 });
 ```
 
-## Why @nodelibraries/enhanced-abort-controller?
+## Why @ylcnfrht/enhanced-abort-controller?
 
-**@nodelibraries/enhanced-abort-controller** is an enhanced version of the native `AbortController` with additional features for modern Node.js and TypeScript applications. It provides timeout-based cancellation, linked controllers, and proper resource cleanup patterns.
+**@ylcnfrht/enhanced-abort-controller** is an enhanced version of the native `AbortController` with additional features for modern Node.js and TypeScript applications. It provides timeout-based cancellation, linked controllers, and proper resource cleanup patterns.
 
 > Learn more about our features and design principles in the [Introduction](/guide/) guide.
 
@@ -130,7 +130,7 @@ Use with:
 ## Installation
 
 ```bash
-npm install @nodelibraries/enhanced-abort-controller
+npm install @ylcnfrht/enhanced-abort-controller
 ```
 
 No additional configuration required! The library has zero dependencies and works out of the box.

@@ -1,6 +1,6 @@
 # Enhanced Abort Controller
 
-[![npm version](https://badge.fury.io/js/%40nodelibraries%2Fenhanced-abort-controller.svg)](https://badge.fury.io/js/%40nodelibraries%2Fenhanced-abort-controller)
+[![npm version](https://badge.fury.io/js/%40ylcnfrht%2Fenhanced-abort-controller.svg)](https://badge.fury.io/js/%40ylcnfrht%2Fenhanced-abort-controller)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-16+-green.svg)](https://nodejs.org/)
@@ -53,7 +53,7 @@ This library provides an enhanced version of the native `AbortController` with a
 ## 📦 Installation
 
 ```bash
-npm install @nodelibraries/enhanced-abort-controller
+npm install @ylcnfrht/enhanced-abort-controller
 ```
 
 ### TypeScript Support
@@ -69,7 +69,7 @@ import {
   EnhancedAbortController,
   EnhancedAbortSignal,
   AbortError,
-} from '@nodelibraries/enhanced-abort-controller';
+} from '@ylcnfrht/enhanced-abort-controller';
 
 // Create a controller
 const controller = new EnhancedAbortController();
@@ -107,7 +107,7 @@ registration.unregister();
 import {
   EnhancedAbortController,
   TimeSpan,
-} from '@nodelibraries/enhanced-abort-controller';
+} from '@ylcnfrht/enhanced-abort-controller';
 
 const controller = new EnhancedAbortController();
 
@@ -125,7 +125,7 @@ const timeoutController = EnhancedAbortController.timeout(5000);
 ### Linked Controllers
 
 ```typescript
-import { EnhancedAbortController } from '@nodelibraries/enhanced-abort-controller';
+import { EnhancedAbortController } from '@ylcnfrht/enhanced-abort-controller';
 
 const controller1 = new EnhancedAbortController();
 const controller2 = new EnhancedAbortController();
@@ -183,7 +183,7 @@ controller.abortAfter(5000); // Abort after 5 seconds
 Aborts the controller using a TimeSpan object.
 
 ```typescript
-import { TimeSpan } from '@nodelibraries/enhanced-abort-controller';
+import { TimeSpan } from '@ylcnfrht/enhanced-abort-controller';
 
 const controller = new EnhancedAbortController();
 const timeSpan = TimeSpan.fromMinutes(2.5);
@@ -587,7 +587,7 @@ new AbortError(message?: string)
 #### Usage
 
 ```typescript
-import { AbortError } from '@nodelibraries/enhanced-abort-controller';
+import { AbortError } from '@ylcnfrht/enhanced-abort-controller';
 
 try {
   signal.throwIfAborted('Custom message');
@@ -607,7 +607,7 @@ import {
   EnhancedAbortController,
   EnhancedAbortSignal,
   AbortError,
-} from '@nodelibraries/enhanced-abort-controller';
+} from '@ylcnfrht/enhanced-abort-controller';
 
 async function complexWorkflow(signal: EnhancedAbortSignal) {
   console.log('🔄 Starting complex workflow...');
@@ -656,7 +656,7 @@ import {
   EnhancedAbortController,
   EnhancedAbortSignal,
   AbortError,
-} from '@nodelibraries/enhanced-abort-controller';
+} from '@ylcnfrht/enhanced-abort-controller';
 
 async function fetchWithAbort(url: string, signal: EnhancedAbortSignal) {
   try {
@@ -692,7 +692,7 @@ import {
   EnhancedAbortController,
   EnhancedAbortSignal,
   AbortError,
-} from '@nodelibraries/enhanced-abort-controller';
+} from '@ylcnfrht/enhanced-abort-controller';
 import axios from 'axios';
 
 async function axiosWithAbort(url: string, signal: EnhancedAbortSignal) {
@@ -721,7 +721,7 @@ axiosWithAbort('https://api.example.com/data', controller.signal).catch(() =>
 ### Resource Cleanup Pattern
 
 ```typescript
-import { EnhancedAbortController } from '@nodelibraries/enhanced-abort-controller';
+import { EnhancedAbortController } from '@ylcnfrht/enhanced-abort-controller';
 
 const controller = new EnhancedAbortController();
 
@@ -755,7 +755,7 @@ setTimeout(() => {
 import {
   EnhancedAbortController,
   TimeSpan,
-} from '@nodelibraries/enhanced-abort-controller';
+} from '@ylcnfrht/enhanced-abort-controller';
 
 // Controller with immediate abort
 const immediateController = new EnhancedAbortController();
@@ -789,7 +789,7 @@ import {
   EnhancedAbortController,
   EnhancedAbortSignal,
   AbortError,
-} from '@nodelibraries/enhanced-abort-controller';
+} from '@ylcnfrht/enhanced-abort-controller';
 
 const controller = new EnhancedAbortController();
 
@@ -886,7 +886,7 @@ This project includes GitHub Pages support for hosting documentation. The docume
 2. **Automatic Deployment**:
 
    - The `.github/workflows/pages.yml` workflow automatically builds and deploys documentation
-   - Documentation is available at: `https://nodelibraries.github.io/enhanced-abort-controller`
+   - Documentation is available at: `https://ylcnfrht.github.io/enhanced-abort-controller`
 
 3. **Manual Deployment**:
    - The workflow can also be triggered manually from the Actions tab
@@ -933,13 +933,13 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 Full API documentation is available at:
 
-- **GitHub Pages**: [https://nodelibraries.github.io/enhanced-abort-controller](https://nodelibraries.github.io/enhanced-abort-controller)
-- **npm Package**: [https://www.npmjs.com/package/@nodelibraries/enhanced-abort-controller](https://www.npmjs.com/package/@nodelibraries/enhanced-abort-controller)
+- **GitHub Pages**: [https://ylcnfrht.github.io/enhanced-abort-controller](https://ylcnfrht.github.io/enhanced-abort-controller)
+- **npm Package**: [https://www.npmjs.com/package/@ylcnfrht/enhanced-abort-controller](https://www.npmjs.com/package/@ylcnfrht/enhanced-abort-controller)
 
 ## 🔗 Links
 
-- [GitHub Repository](https://github.com/nodelibraries/enhanced-abort-controller)
-- [npm Package](https://www.npmjs.com/package/@nodelibraries/enhanced-abort-controller)
+- [GitHub Repository](https://github.com/ylcnfrht/enhanced-abort-controller)
+- [npm Package](https://www.npmjs.com/package/@ylcnfrht/enhanced-abort-controller)
 - [TypeScript](https://www.typescriptlang.org/)
 - [Node.js](https://nodejs.org/)
 
@@ -956,7 +956,7 @@ Full API documentation is available at:
 ### Basic Timeout
 
 ```typescript
-import { EnhancedAbortController } from '@nodelibraries/enhanced-abort-controller';
+import { EnhancedAbortController } from '@ylcnfrht/enhanced-abort-controller';
 
 const controller = new EnhancedAbortController();
 controller.abortAfter(5000); // Auto-abort after 5 seconds
@@ -974,7 +974,7 @@ fetch('https://api.example.com/data', {
 ### Linked Controllers
 
 ```typescript
-import { EnhancedAbortController } from '@nodelibraries/enhanced-abort-controller';
+import { EnhancedAbortController } from '@ylcnfrht/enhanced-abort-controller';
 
 const userController = new EnhancedAbortController();
 const timeoutController = EnhancedAbortController.timeout(10000);
@@ -997,7 +997,7 @@ fetch('https://api.example.com/data', {
 import {
   EnhancedAbortController,
   AbortError,
-} from '@nodelibraries/enhanced-abort-controller';
+} from '@ylcnfrht/enhanced-abort-controller';
 
 async function processData(signal: EnhancedAbortSignal) {
   const resources: string[] = [];

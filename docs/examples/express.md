@@ -10,7 +10,7 @@ import {
   EnhancedAbortController,
   EnhancedAbortSignal,
   AbortError,
-} from '@nodelibraries/enhanced-abort-controller';
+} from '@ylcnfrht/enhanced-abort-controller';
 
 const app = express();
 
@@ -82,7 +82,7 @@ import {
   EnhancedAbortSignal,
   AbortError,
   TimeSpan,
-} from '@nodelibraries/enhanced-abort-controller';
+} from '@ylcnfrht/enhanced-abort-controller';
 
 const app = express();
 
@@ -175,7 +175,7 @@ import express from 'express';
 import {
   EnhancedAbortController,
   AbortError,
-} from '@nodelibraries/enhanced-abort-controller';
+} from '@ylcnfrht/enhanced-abort-controller';
 
 const app = express();
 app.use(express.json());
@@ -250,7 +250,7 @@ import express from 'express';
 import {
   EnhancedAbortController,
   AbortError,
-} from '@nodelibraries/enhanced-abort-controller';
+} from '@ylcnfrht/enhanced-abort-controller';
 
 const app = express();
 

@@ -3,7 +3,7 @@
 Basic example of using Enhanced AbortController.
 
 ```typescript
-import { EnhancedAbortController } from '@nodelibraries/enhanced-abort-controller';
+import { EnhancedAbortController } from '@ylcnfrht/enhanced-abort-controller';
 
 const controller = new EnhancedAbortController();
 

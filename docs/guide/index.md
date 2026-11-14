@@ -1,8 +1,8 @@
 # Introduction
 
-`@nodelibraries/enhanced-abort-controller` is an enhanced version of the native `AbortController` with additional features for modern Node.js and TypeScript applications. It provides timeout-based cancellation, linked controllers, and proper resource cleanup patterns.
+`@ylcnfrht/enhanced-abort-controller` is an enhanced version of the native `AbortController` with additional features for modern Node.js and TypeScript applications. It provides timeout-based cancellation, linked controllers, and proper resource cleanup patterns.
 
-> **@nodelibraries/enhanced-abort-controller** - Enhanced AbortController with Node.js-style patterns. Learn more in our [Installation](/guide/installation) page.
+> **@ylcnfrht/enhanced-abort-controller** - Enhanced AbortController with Node.js-style patterns. Learn more in our [Installation](/guide/installation) page.
 
 ## Key Features
 
@@ -42,7 +42,7 @@ controller.abort();
 Our enhanced version adds powerful features while maintaining full compatibility with the native API:
 
 ```typescript
-import { EnhancedAbortController } from '@nodelibraries/enhanced-abort-controller';
+import { EnhancedAbortController } from '@ylcnfrht/enhanced-abort-controller';
 
 const controller = new EnhancedAbortController();
 

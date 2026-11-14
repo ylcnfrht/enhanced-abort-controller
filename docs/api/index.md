@@ -1,6 +1,6 @@
 # API Reference
 
-Complete API reference for @nodelibraries/enhanced-abort-controller.
+Complete API reference for @ylcnfrht/enhanced-abort-controller.
 
 ## Main Classes
 
@@ -10,10 +10,10 @@ Complete API reference for @nodelibraries/enhanced-abort-controller.
 - **AbortError** - Error thrown when operations are aborted
 - **AbortRegistration** - Registration for abort signal callbacks
 
-For detailed API documentation, please refer to the [README](https://github.com/nodelibraries/enhanced-abort-controller#readme) file in the repository.
+For detailed API documentation, please refer to the [README](https://github.com/ylcnfrht/enhanced-abort-controller#readme) file in the repository.
 
 ## Quick Links
 
 - [Getting Started Guide](/guide/)
 - [Examples](/examples/)
-- [GitHub Repository](https://github.com/nodelibraries/enhanced-abort-controller)
+- [GitHub Repository](https://github.com/ylcnfrht/enhanced-abort-controller)

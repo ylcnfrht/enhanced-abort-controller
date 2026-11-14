@@ -18,7 +18,7 @@
  *   EnhancedAbortSignal,
  *   AbortError,
  *   TimeSpan
- * } from '@nodelibraries/enhanced-abort-controller';
+ * } from '@ylcnfrht/enhanced-abort-controller';
  *
  * // Create a controller with timeout
  * const controller = new EnhancedAbortController();

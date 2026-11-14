@@ -5,7 +5,7 @@ This guide will walk you through creating your first Enhanced AbortController se
 ## Basic Example
 
 ```typescript
-import { EnhancedAbortController } from '@nodelibraries/enhanced-abort-controller';
+import { EnhancedAbortController } from '@ylcnfrht/enhanced-abort-controller';
 
 // 1. Create a controller
 const controller = new EnhancedAbortController();
@@ -74,7 +74,7 @@ Use `TimeSpan` for more readable time intervals:
 import {
   EnhancedAbortController,
   TimeSpan,
-} from '@nodelibraries/enhanced-abort-controller';
+} from '@ylcnfrht/enhanced-abort-controller';
 
 const controller = new EnhancedAbortController();
 const timeSpan = TimeSpan.fromSeconds(5);
@@ -109,7 +109,7 @@ import {
   EnhancedAbortController,
   AbortError,
   EnhancedAbortSignal,
-} from '@nodelibraries/enhanced-abort-controller';
+} from '@ylcnfrht/enhanced-abort-controller';
 
 async function processData(signal: EnhancedAbortSignal) {
   for (let i = 0; i < 100; i++) {
@@ -131,4 +131,4 @@ processData(controller.signal).catch((err) => {
 ## Next Steps
 
 - Check out [Examples](/examples/)
-- Read the [README](https://github.com/nodelibraries/enhanced-abort-controller#readme) for complete API documentation
+- Read the [README](https://github.com/ylcnfrht/enhanced-abort-controller#readme) for complete API documentation

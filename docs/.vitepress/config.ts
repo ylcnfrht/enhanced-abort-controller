@@ -1,7 +1,7 @@
 import { defineConfig } from 'vitepress';
 
 export default defineConfig({
-  title: '@nodelibraries/enhanced-abort-controller',
+  title: '@ylcnfrht/enhanced-abort-controller',
   description:
     'Enhanced AbortController with Node.js-style patterns for modern TypeScript applications',
   base: '/enhanced-abort-controller/',
@@ -22,7 +22,7 @@ export default defineConfig({
       {
         property: 'og:title',
         content:
-          '@nodelibraries/enhanced-abort-controller - Enhanced AbortController',
+          '@ylcnfrht/enhanced-abort-controller - Enhanced AbortController',
       },
     ],
     [
@@ -38,7 +38,7 @@ export default defineConfig({
       'meta',
       {
         property: 'og:url',
-        content: 'https://nodelibraries.github.io/enhanced-abort-controller/',
+        content: 'https://ylcnfrht.github.io/enhanced-abort-controller/',
       },
     ],
   ],
@@ -53,7 +53,7 @@ export default defineConfig({
     nav: [
       { text: 'Guide', link: '/guide/' },
       { text: 'Examples', link: '/examples/' },
-      { text: 'GitHub', link: 'https://github.com/nodelibraries/enhanced-abort-controller' },
+      { text: 'GitHub', link: 'https://github.com/ylcnfrht/enhanced-abort-controller' },
       {
         text: '☕ Buy me a coffee',
         link: 'https://buymeacoffee.com/ylcnfrht',
@@ -77,14 +77,14 @@ export default defineConfig({
     socialLinks: [
       {
         icon: 'github',
-        link: 'https://github.com/nodelibraries/enhanced-abort-controller',
+        link: 'https://github.com/ylcnfrht/enhanced-abort-controller',
       },
     ],
 
     footer: {
       message:
         'Released under the MIT License. If you find this project helpful, consider <a href="https://buymeacoffee.com/ylcnfrht" target="_blank" rel="noopener noreferrer">buying me a coffee</a> ☕',
-      copyright: 'Copyright © 2025 nodelibraries | Created by ylcnfrht',
+      copyright: 'Copyright © 2025 ylcnfrht',
     },
   },
 });

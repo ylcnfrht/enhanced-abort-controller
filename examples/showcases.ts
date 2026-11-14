@@ -575,12 +575,12 @@ console.log(
 );
 console.log('📖 For more information, visit:');
 console.log(
-  '   - GitHub: https://github.com/nodelibraries/enhanced-abort-controller'
+  '   - GitHub: https://github.com/ylcnfrht/enhanced-abort-controller'
 );
 console.log(
-  '   - npm: https://www.npmjs.com/package/@nodelibraries/enhanced-abort-controller'
+  '   - npm: https://www.npmjs.com/package/@ylcnfrht/enhanced-abort-controller'
 );
 console.log(
-  '   - Docs: https://nodelibraries.github.io/enhanced-abort-controller'
+  '   - Docs: https://ylcnfrht.github.io/enhanced-abort-controller'
 );
 console.log('\n');

@@ -1,6 +1,6 @@
 # Examples
 
-Real-world examples of using @nodelibraries/enhanced-abort-controller.
+Real-world examples of using @ylcnfrht/enhanced-abort-controller.
 
 ## Basic Examples
 
@@ -12,4 +12,4 @@ Real-world examples of using @nodelibraries/enhanced-abort-controller.
 
 ## More Examples
 
-For additional examples, check out the [examples directory](https://github.com/nodelibraries/enhanced-abort-controller/tree/main/examples) in the repository.
+For additional examples, check out the [examples directory](https://github.com/ylcnfrht/enhanced-abort-controller/tree/main/examples) in the repository.

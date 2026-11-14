@@ -3,19 +3,19 @@
 ## npm
 
 ```bash
-npm install @nodelibraries/enhanced-abort-controller
+npm install @ylcnfrht/enhanced-abort-controller
 ```
 
 ## yarn
 
 ```bash
-yarn add @nodelibraries/enhanced-abort-controller
+yarn add @ylcnfrht/enhanced-abort-controller
 ```
 
 ## pnpm
 
 ```bash
-pnpm add @nodelibraries/enhanced-abort-controller
+pnpm add @ylcnfrht/enhanced-abort-controller
 ```
 
 ## TypeScript Support
@@ -32,7 +32,7 @@ This library is written in TypeScript and includes full type definitions. No add
 After installation, verify it works:
 
 ```typescript
-import { EnhancedAbortController } from '@nodelibraries/enhanced-abort-controller';
+import { EnhancedAbortController } from '@ylcnfrht/enhanced-abort-controller';
 
 const controller = new EnhancedAbortController();
 console.log('Enhanced Abort Controller installed successfully!');
