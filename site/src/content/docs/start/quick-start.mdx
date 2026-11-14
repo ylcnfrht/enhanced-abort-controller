@@ -1,0 +1,92 @@
+---
+title: Quick start
+description: Give a request a deadline, move it, link a step to a request, run cleanup on abort, and release everything with using.
+sidebar:
+  order: 3
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+## 1. A request with a deadline
+
+```ts twoslash
+declare const url: string;
+// ---cut---
+import { EnhancedAbortController, TimeSpan, isAbortError, isTimeoutError } from '@ylcnfrht/enhanced-abort-controller';
+
+using controller = new EnhancedAbortController().abortAfter(TimeSpan.fromSeconds(5));
+
+try {
+  const response = await fetch(url, { signal: controller.signal });
+  console.log(response.status);
+} catch (error) {
+  if (!isAbortError(error)) throw error;
+  console.log(isTimeoutError(error) ? 'timed out' : 'cancelled');
+}
+```
+
+`controller.signal` is a real `AbortSignal`, so fetch takes it directly. `abortAfter` returns the controller, so you can chain it. `using` disposes the controller at the end of the block, which clears the timer if the request finished first.
+
+## 2. Move the deadline
+
+`abortAfter` works like .NET's `CancelAfter`: each call **replaces** the previous schedule.
+
+```ts twoslash
+import { EnhancedAbortController } from '@ylcnfrht/enhanced-abort-controller';
+declare function onChunk(cb: () => void): void;
+// ---cut---
+const idle = new EnhancedAbortController().abortAfter(30_000);
+
+// An idle timeout: every chunk pushes the deadline back.
+onChunk(() => idle.abortAfter(30_000));
+
+// Infinity (or -1, or TimeSpan.infinite) cancels the schedule.
+idle.abortAfter(Infinity);
+```
+
+## 3. A step inside a request
+
+A linked controller aborts when its parent does, with the parent's reason. Give it its own deadline too:
+
+```ts twoslash
+import { EnhancedAbortController } from '@ylcnfrht/enhanced-abort-controller';
+declare const request: { signal: AbortSignal };
+declare function loadUser(signal: AbortSignal): Promise<void>;
+// ---cut---
+{
+  using step = EnhancedAbortController.createLinkedController(request.signal).abortAfter(2000);
+  await loadUser(step.signal); // stops when the request aborts or after 2 s
+} // disposed: its listener on request.signal is gone
+```
+
+## 4. Cleanup when a signal aborts
+
+```ts twoslash
+import { EnhancedAbortController, register } from '@ylcnfrht/enhanced-abort-controller';
+declare const socket: { destroy(error?: Error): void };
+declare const someSignal: AbortSignal;
+// ---cut---
+const controller = new EnhancedAbortController();
+
+// Built into the controller's signal:
+controller.signal.register((reason) => console.log('aborted because', reason));
+
+// For any AbortSignal, with a handle:
+using closeOnAbort = register(someSignal, () => socket.destroy());
+
+controller.abort('done');
+console.log(await controller.signal.whenAborted); // 'done'
+```
+
+<Aside type="caution" title="A pending abortAfter does not keep Node running">
+  The timer is unref'd, exactly like `AbortSignal.timeout`. A script whose only pending work is `await controller.signal.whenAborted` exits before the
+  deadline (with top-level await, exit code 13). In real code the awaited work (a request, a socket, a server) keeps the process alive. See
+  [abortAfter & timeouts](/concepts/abort-after/#the-timer-never-keeps-the-process-alive).
+</Aside>
+
+## Next
+
+- [Signals are real AbortSignals](/concepts/real-signals/)
+- [abortAfter & timeouts](/concepts/abort-after/), with a live timeline
+- [Linked controllers](/concepts/linked-controllers/), with a live playground
+- [Guides](/guides/fetch/): fetch, Node APIs, Express and Fastify, testing, .NET mapping

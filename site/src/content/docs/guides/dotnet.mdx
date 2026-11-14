@@ -1,0 +1,39 @@
+---
+title: For .NET developers
+description: How CancellationTokenSource, CancellationToken, Register, CancelAfter and CreateLinkedTokenSource map to AbortController and this library.
+sidebar:
+  order: 6
+---
+
+JavaScript splits cancellation the same way .NET does: a controller that cancels (`CancellationTokenSource`) and a signal that observes (`CancellationToken`). This library fills in the members the platform lacks.
+
+| .NET | JavaScript / this library |
+|---|---|
+| `new CancellationTokenSource()` | `new EnhancedAbortController()` |
+| `cts.Token` | `controller.signal` (a real `AbortSignal`) |
+| `cts.Cancel()` | `controller.abort(reason?)` |
+| `cts.CancelAfter(TimeSpan)` | `controller.abortAfter(TimeSpan)`, resettable the same way |
+| `new CancellationTokenSource(TimeSpan)` | `EnhancedAbortController.timeout(delay)` |
+| `cts.IsCancellationRequested` | `controller.isAborted` |
+| `cts.Dispose()` / `using var cts` | `controller.dispose()` / `using controller` (doesn't cancel, same as .NET) |
+| `CancellationTokenSource.CreateLinkedTokenSource(a, b)` | `EnhancedAbortController.createLinkedController(a, b)` |
+| `token.IsCancellationRequested` | `signal.aborted` |
+| `token.ThrowIfCancellationRequested()` | `signal.throwIfAborted()` (throws `signal.reason`) |
+| `token.Register(callback)` | `register(signal, (reason) => ...)` or `controller.signal.register(...)` |
+| `CancellationTokenRegistration.Dispose()` | `registration.unregister()` / `using registration` |
+| `token.CanBeCanceled` | `EnhancedAbortSignal.canBeAborted(signal)` |
+| `CancellationToken.None` | `EnhancedAbortSignal.none` |
+| `new CancellationToken(true)` | `EnhancedAbortSignal.aborted` |
+| `Task.Delay(Timeout.Infinite, token)` (wait for cancel) | `await whenAborted(signal)` |
+| `OperationCanceledException` | `isAbortError(error)` |
+| `TaskCanceledException` from `HttpClient.Timeout` | `isTimeoutError(error)` (a `TimeoutError` reason) |
+| `TimeSpan.FromSeconds(30)` | `TimeSpan.fromSeconds(30)` |
+| `Timeout.InfiniteTimeSpan` | `TimeSpan.infinite` (or `Infinity`, -1) |
+
+## Differences worth knowing
+
+- **Reasons.** A JavaScript abort carries a `reason` (any value); APIs reject with it. .NET has no equivalent: you always get `OperationCanceledException`. Timeouts here use a `TimeoutError` reason, so you can tell them from cancels without checking which source fired.
+- **Optional parameters.** .NET passes `CancellationToken token = default`. In JavaScript, take `signal?: AbortSignal` (or default to `EnhancedAbortSignal.none`); `createLinkedController` and `EnhancedAbortSignal.any` skip `undefined`.
+- **Callbacks after cancellation.** .NET's `Register` on an already-cancelled token runs the callback synchronously; so does `register` here. Plain `addEventListener` would not.
+- **Timers and process lifetime.** A pending `CancelAfter` doesn't keep a .NET process alive either; here, in Node, the timer is unref'd for the same effect. A script that only awaits the abort exits early; see [abortAfter & timeouts](/concepts/abort-after/#the-timer-never-keeps-the-process-alive).
+- **Exceptions in callbacks.** .NET aggregates them into the `Cancel()` call. Here a callback registered before the abort runs as an event listener; its exception is uncaught in Node. Catch inside callbacks.

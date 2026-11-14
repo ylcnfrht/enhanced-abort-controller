@@ -1,0 +1,69 @@
+---
+title: Cheat sheet
+description: Every export of @ylcnfrht/enhanced-abort-controller on one page, with the behaviour that matters.
+sidebar:
+  order: 1
+---
+
+```ts
+import {
+  EnhancedAbortController, EnhancedAbortSignal, TimeSpan,
+  register, whenAborted, AbortRegistration,
+  AbortError, isAbortError, isTimeoutError,
+  type Delay, type EnhancedSignal,
+} from '@ylcnfrht/enhanced-abort-controller';
+```
+
+## EnhancedAbortController (extends AbortController)
+
+| Member | Behaviour |
+|---|---|
+| `new EnhancedAbortController()` | A real `AbortController` |
+| `.signal` | Native `AbortSignal` (`EnhancedSignal`), same object every time |
+| `.signal.register(cb)` · `.signal.whenAborted` · `.signal.canBeAborted` | Extras on the controller's own signal; `whenAborted` is cached |
+| `.abort(reason?)` | Native; works after `dispose()` |
+| `.abortAfter(delay)` | Replaces any schedule; `Infinity` / -1 / `TimeSpan.infinite` cancel; `TimeoutError` reason; `RangeError` on bad delays; throws if disposed; no-op once aborted; returns `this`; unref'd timer |
+| `.abortAfterTimeSpan(span)` | 1.x name for `abortAfter(span)` |
+| `.dispose()` · `using` | Releases timer and parent links; **does not abort**; idempotent |
+| `.isAborted` · `.reason` · `.isDisposed` | State |
+| `EnhancedAbortController.timeout(delay)` | `new EnhancedAbortController().abortAfter(delay)` |
+| `EnhancedAbortController.createLinkedController(...signals)` · `linkSignals` | Aborts with the first parent's reason; skips `undefined` / `null` / `none`; removes parent listeners on abort or dispose |
+
+## Any AbortSignal
+
+| Function | Behaviour |
+|---|---|
+| `register(signal, cb)` | `cb(reason)` once on abort; runs **now** if already aborted (its error propagates); returns `AbortRegistration`; errors in later callbacks are uncaught in Node |
+| `whenAborted(signal)` | Promise of the reason; never rejects |
+| `isAbortError(e)` | Library `AbortError` or any error named `AbortError` / `TimeoutError` |
+| `isTimeoutError(e)` | Error named `TimeoutError`, or one whose `cause` is (Node core APIs wrap it) |
+
+## AbortRegistration
+
+`unregister()` · `dispose()` · `using` · `isDisposed` (true after unregister, after the callback ran, or if registered on an aborted signal).
+
+## EnhancedAbortSignal (helper object)
+
+| Helper | |
+|---|---|
+| `none` | One signal that never aborts; registers no listeners |
+| `aborted` | Getter: a new aborted signal |
+| `timeout(delay)` | `AbortSignal.timeout` + `TimeSpan`; `Infinity` → `none`; > 24.8 days chained |
+| `any(signals)` | Native `AbortSignal.any`, skipping `undefined` / `null` / `none`; nothing left → `none` |
+| `register` · `whenAborted` | The standalone functions |
+| `canBeAborted(signal)` | `false` only for `none` |
+
+## TimeSpan
+
+`fromMilliseconds/Seconds/Minutes/Hours/Days` · `milliseconds` · `totalSeconds/Minutes/Hours/Days` · `add` · `subtract` · `equals` · `compareTo` · `valueOf` · `toString()` → `"1500ms"` · `zero` · `infinite` (-1) · `maxValue` · `minValue`. Non-finite input throws `RangeError`.
+
+## AbortError
+
+`new AbortError(message = 'The operation was aborted.', { cause })`, `name === 'AbortError'`.
+
+## Gotchas
+
+- Pass `controller.signal`, never `controller.signal.signal` (1.x).
+- `using` + `return promise` disposes too early: `return await`.
+- A pending `abortAfter` alone doesn't keep Node alive (top-level await exits with code 13).
+- A custom `abort(new Error(...))` reason is not an abort error: check `signal.aborted` in the `catch`.

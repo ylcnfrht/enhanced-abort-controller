@@ -1,0 +1,20 @@
+---
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+import Playground from '../components/Playground.tsx';
+---
+
+<StarlightPage
+  frontmatter={{
+    title: 'Playground',
+    description: 'Edit and run TypeScript against the real enhanced-abort-controller source in your browser: abortAfter, linked controllers, register, whenAborted, TimeSpan.',
+    template: 'splash',
+    tableOfContents: false,
+    pagefind: true,
+  }}
+>
+  <p>
+    This page runs the actual <code>@ylcnfrht/enhanced-abort-controller</code> source in your browser. Pick an example or write your own, then press <strong>Run</strong>. <code>console.log</code> output and uncaught errors appear on the right. <strong>Copy link</strong> puts the
+    snippet in the URL so you can share it.
+  </p>
+  <Playground client:load />
+</StarlightPage>

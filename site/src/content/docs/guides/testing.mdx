@@ -1,0 +1,87 @@
+---
+title: Testing with fake timers
+description: Test deadlines, resets and cancellation deterministically with Vitest or Jest fake timers, plus testing code that takes a signal.
+sidebar:
+  order: 5
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`abortAfter` uses the global `setTimeout` / `clearTimeout`, so fake timers (Vitest's `vi.useFakeTimers()`, Jest's `jest.useFakeTimers()`, `@sinonjs/fake-timers`) control it completely. No real waiting.
+
+## Deadlines and resets
+
+```ts title="deadline.test.ts"
+import { EnhancedAbortController, TimeSpan, isTimeoutError } from '@ylcnfrht/enhanced-abort-controller';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+
+beforeEach(() => vi.useFakeTimers());
+afterEach(() => vi.useRealTimers());
+
+it('aborts with a TimeoutError at the deadline', () => {
+  const controller = new EnhancedAbortController().abortAfter(TimeSpan.fromSeconds(1));
+  vi.advanceTimersByTime(999);
+  expect(controller.isAborted).toBe(false);
+  vi.advanceTimersByTime(1);
+  expect(isTimeoutError(controller.reason)).toBe(true);
+});
+
+it('abortAfter replaces the previous schedule', () => {
+  const controller = new EnhancedAbortController().abortAfter(100);
+  vi.advanceTimersByTime(80);
+  controller.abortAfter(100); // now 100 ms from here
+  vi.advanceTimersByTime(80);
+  expect(controller.isAborted).toBe(false);
+  vi.advanceTimersByTime(20);
+  expect(controller.isAborted).toBe(true);
+});
+
+it('dispose clears the timer', () => {
+  const controller = new EnhancedAbortController().abortAfter(1000);
+  expect(vi.getTimerCount()).toBe(1);
+  controller.dispose();
+  expect(vi.getTimerCount()).toBe(0);
+});
+```
+
+## Code that takes a signal
+
+Test your own cancellable functions by aborting in the middle and asserting what they reject with:
+
+```ts title="download.test.ts"
+it('stops when the deadline passes', async () => {
+  const controller = new EnhancedAbortController().abortAfter(5000);
+  const pending = download('/big', controller.signal); // your code
+  await vi.advanceTimersByTimeAsync(5000); // runs timers and the promise callbacks in between
+  await expect(pending).rejects.toMatchObject({ name: 'TimeoutError' });
+});
+
+it('rejects at once when the signal is already aborted', async () => {
+  await expect(download('/big', EnhancedAbortSignal.aborted)).rejects.toMatchObject({ name: 'AbortError' });
+});
+
+it('never aborts with none', async () => {
+  await expect(download('/small', EnhancedAbortSignal.none)).resolves.toBeDefined();
+});
+```
+
+Use `advanceTimersByTimeAsync` when the code under test awaits between timers; the synchronous variant doesn't let promise callbacks run.
+
+## Leak checks
+
+In Node, `getEventListeners` from `node:events` counts the listeners on a signal. Use it to prove your code unregisters what it registers:
+
+```ts title="leaks.test.ts"
+import { getEventListeners } from 'node:events';
+
+it('leaves no listener on the request signal', async () => {
+  const request = new AbortController();
+  for (let i = 0; i < 100; i++) await handleStep(request.signal); // uses createLinkedController + using inside
+  expect(getEventListeners(request.signal, 'abort')).toHaveLength(0);
+});
+```
+
+<Aside type="note">
+  Real timers in tests: the `abortAfter` timer is unref'd, which test runners don't mind (they keep the process alive themselves). In a plain script,
+  see [the timer never keeps the process alive](/concepts/abort-after/#the-timer-never-keeps-the-process-alive).
+</Aside>

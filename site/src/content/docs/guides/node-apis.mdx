@@ -1,0 +1,111 @@
+---
+title: Node APIs
+description: Use EnhancedAbortController with fs/promises, timers/promises, streams, events, child_process and readline in Node.
+sidebar:
+  order: 2
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Node's own APIs take an `AbortSignal` in their options. Since `controller.signal` is one, they all work.
+
+<Aside type="note" title="Node wraps the reason">
+  Node core APIs reject with Node's `AbortError` (`code: 'ABORT_ERR'`) and put the signal's reason in `error.cause`. `isAbortError(error)` is true,
+  and `isTimeoutError(error)` follows `cause`, so it tells a timeout apart here too.
+</Aside>
+
+## fs/promises
+
+```ts twoslash
+import { EnhancedAbortController, TimeSpan, isAbortError, isTimeoutError } from '@ylcnfrht/enhanced-abort-controller';
+import { readFile, writeFile } from 'node:fs/promises';
+// ---cut---
+using controller = new EnhancedAbortController().abortAfter(TimeSpan.fromSeconds(2));
+try {
+  const text = await readFile('big.json', { encoding: 'utf8', signal: controller.signal });
+  await writeFile('copy.json', text, { signal: controller.signal });
+} catch (error) {
+  if (!isAbortError(error)) throw error;
+  console.log(isTimeoutError(controller.reason) ? 'disk too slow' : 'cancelled');
+}
+```
+
+## timers/promises
+
+A cancellable sleep, and a polling loop that stops on abort:
+
+```ts twoslash
+import { EnhancedAbortController, isAbortError } from '@ylcnfrht/enhanced-abort-controller';
+import { setTimeout as sleep, setInterval as every } from 'node:timers/promises';
+declare function checkStatus(): Promise<boolean>;
+// ---cut---
+using controller = new EnhancedAbortController().abortAfter(60_000);
+
+await sleep(500, undefined, { signal: controller.signal });
+
+try {
+  for await (const _ of every(1000, undefined, { signal: controller.signal })) {
+    if (await checkStatus()) break;
+  }
+} catch (error) {
+  if (!isAbortError(error)) throw error;
+}
+```
+
+`timers/promises` timers are ref'd, so a sleep keeps the process alive while it waits; the `abortAfter` timer cuts it short.
+
+## Streams
+
+`stream.pipeline` destroys every stream in the chain on abort:
+
+```ts twoslash
+import { EnhancedAbortController, TimeSpan } from '@ylcnfrht/enhanced-abort-controller';
+import { pipeline } from 'node:stream/promises';
+import { createReadStream, createWriteStream } from 'node:fs';
+import { createGzip } from 'node:zlib';
+// ---cut---
+using controller = new EnhancedAbortController().abortAfter(TimeSpan.fromMinutes(5));
+await pipeline(createReadStream('access.log'), createGzip(), createWriteStream('access.log.gz'), { signal: controller.signal });
+```
+
+Readable streams also accept a signal at creation (`Readable.from(iterable, { signal })`), and `stream.addAbortSignal(signal, stream)` attaches one to an existing stream. For an idle timeout, reset the deadline on each `data` event: `stream.on('data', () => controller.abortAfter(10_000))`.
+
+## events.once and EventEmitter
+
+```ts twoslash
+import { EnhancedAbortController } from '@ylcnfrht/enhanced-abort-controller';
+import { once } from 'node:events';
+import type { EventEmitter } from 'node:events';
+declare const worker: EventEmitter;
+// ---cut---
+using controller = new EnhancedAbortController().abortAfter(5000);
+const [message] = await once(worker, 'ready', { signal: controller.signal }); // rejects after 5 s
+```
+
+## child_process
+
+```ts twoslash
+import { EnhancedAbortController } from '@ylcnfrht/enhanced-abort-controller';
+import { spawn } from 'node:child_process';
+// ---cut---
+const controller = new EnhancedAbortController().abortAfter(30_000);
+const child = spawn('ffmpeg', ['-i', 'in.mov', 'out.mp4'], { signal: controller.signal }); // killed after 30 s
+child.on('exit', () => controller.dispose());
+```
+
+## Shutdown signal for the whole app
+
+One process-wide controller, aborted on SIGTERM; every long-running loop links to it.
+
+```ts twoslash
+import { EnhancedAbortController } from '@ylcnfrht/enhanced-abort-controller';
+declare function processJob(signal: AbortSignal): Promise<void>;
+// ---cut---
+const shutdown = new EnhancedAbortController();
+process.once('SIGTERM', () => shutdown.abort(new Error('SIGTERM')));
+
+while (!shutdown.signal.aborted) {
+  using job = EnhancedAbortController.createLinkedController(shutdown.signal).abortAfter(30_000);
+  await processJob(job.signal).catch(() => {}); // each job: shutdown or its own 30 s limit
+} // every iteration removes its listener from shutdown.signal
+```

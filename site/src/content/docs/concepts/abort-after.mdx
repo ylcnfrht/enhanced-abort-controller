@@ -1,0 +1,110 @@
+---
+title: abortAfter & timeouts
+description: abortAfter works like .NET CancelAfter. Reset and cancel the deadline, TimeoutError reasons, validation, and why the timer never keeps Node alive.
+sidebar:
+  order: 2
+---
+
+import { Aside } from '@astrojs/starlight/components';
+import TimelineSimulator from '../../../components/TimelineSimulator.tsx';
+
+`controller.abortAfter(delay)` schedules `controller.abort(timeoutReason)` after `delay`. It returns the controller, so it chains:
+
+```ts twoslash
+import { EnhancedAbortController, TimeSpan } from '@ylcnfrht/enhanced-abort-controller';
+// ---cut---
+const controller = new EnhancedAbortController().abortAfter(TimeSpan.fromSeconds(5));
+const same = EnhancedAbortController.timeout(5000); // shortcut for the line above
+```
+
+`delay` is milliseconds or a [`TimeSpan`](/concepts/timespan/).
+
+## Try it
+
+The widget below drives one real controller. Schedule a deadline, schedule it again, cancel it, abort by hand, register callbacks, dispose.
+
+<TimelineSimulator client:visible />
+
+## The rules
+
+| Call | Effect |
+|---|---|
+| `abortAfter(ms)` | Schedules the abort. **Replaces** any earlier schedule (the deadline is now `ms` from this call). |
+| `abortAfter(Infinity)`, `abortAfter(-1)`, `abortAfter(TimeSpan.infinite)` | Cancels the schedule. The controller stays live. |
+| `abortAfter(0)` | Aborts on the next timer turn, not synchronously. |
+| `abortAfter(NaN)`, negative other than -1, a non-number | Throws `RangeError`. Nothing is scheduled. |
+| `abortAfter(...)` after `abort()` | No-op: an aborted controller stays aborted. |
+| `abortAfter(...)` after `dispose()` | Throws `Error`: a disposed controller can't schedule. |
+| `abort()` while a deadline is pending | Aborts now with your reason; the timer is cleared. |
+
+Delays longer than `setTimeout`'s limit (2³¹−1 ms, about 24.8 days) work: the library chains timers instead of letting `setTimeout` overflow and fire immediately.
+
+`abortAfterTimeSpan(span)` is kept from 1.x and does the same as `abortAfter(span)`.
+
+## The reason is a TimeoutError
+
+When the deadline fires, the reason is `new DOMException('The operation timed out.', 'TimeoutError')`, the same as `AbortSignal.timeout`. A manual `abort()` uses `DOMException` `AbortError` (or your reason), so the two are easy to tell apart:
+
+```ts twoslash
+declare const url: string;
+// ---cut---
+import { EnhancedAbortController, isTimeoutError } from '@ylcnfrht/enhanced-abort-controller';
+
+using controller = new EnhancedAbortController().abortAfter(2000);
+try {
+  await fetch(url, { signal: controller.signal });
+} catch (error) {
+  console.log(isTimeoutError(error) ? 'took longer than 2 s' : 'something else');
+}
+```
+
+See [Reasons & errors](/concepts/reasons-and-errors/).
+
+## Idle timeouts
+
+Because each call resets the deadline, an idle timeout is one line per event:
+
+```ts twoslash
+import { EnhancedAbortController, TimeSpan } from '@ylcnfrht/enhanced-abort-controller';
+declare const stream: AsyncIterable<Uint8Array>;
+declare function handle(chunk: Uint8Array): void;
+// ---cut---
+using idle = new EnhancedAbortController().abortAfter(TimeSpan.fromSeconds(30));
+
+for await (const chunk of stream) {
+  idle.signal.throwIfAborted();
+  idle.abortAfter(TimeSpan.fromSeconds(30)); // still talking: push the deadline back
+  handle(chunk);
+}
+```
+
+## The timer never keeps the process alive
+
+In Node (and Bun), the `abortAfter` timer is **unref'd**, exactly like the timer behind `AbortSignal.timeout`. A pending deadline alone never stops Node from exiting. That is what you want for a library: a forgotten 10-minute deadline must not hold a CLI open for 10 minutes.
+
+The consequence: a script whose **only** pending work is waiting for the abort exits before the deadline.
+
+```ts title="exits.mts"
+import { EnhancedAbortController } from '@ylcnfrht/enhanced-abort-controller';
+
+const controller = new EnhancedAbortController().abortAfter(1000);
+console.log(await controller.signal.whenAborted); // never printed
+// Node: "Warning: Detected unsettled top-level await", exit code 13
+```
+
+Native `AbortSignal.timeout(1000)` behaves the same way. In real programs this doesn't come up, because the awaited work keeps the process alive: a fetch in flight, an open socket, a listening server, a child process. The deadline then fires on time and aborts that work.
+
+```ts twoslash
+import { EnhancedAbortController } from '@ylcnfrht/enhanced-abort-controller';
+// ---cut---
+using controller = new EnhancedAbortController().abortAfter(1000);
+// The fetch's socket keeps Node alive; the deadline aborts it after 1 s.
+await fetch('https://example.com/slow', { signal: controller.signal }).catch(() => {});
+```
+
+If you genuinely want to wait for nothing but the deadline (a demo, a test), wait on something that holds the loop, such as a ref'd timer: `await new Promise((r) => setTimeout(r, 1000))` or `setTimeout` from `node:timers/promises`.
+
+<Aside type="note">
+  Deno and browsers have no unref: there a pending timer simply fires. A controller with a pending `abortAfter` stays in memory until the timer fires,
+  or it is aborted or disposed (a native `AbortSignal.timeout` signal can be garbage-collected earlier). Dispose per-request controllers, ideally with `using`.
+</Aside>

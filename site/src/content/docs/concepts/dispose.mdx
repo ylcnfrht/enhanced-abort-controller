@@ -1,0 +1,83 @@
+---
+title: dispose & lifetimes
+description: dispose() and using release a controller's timer and parent links without aborting it, like .NET Dispose. When to dispose and what it does not do.
+sidebar:
+  order: 6
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`controller.dispose()` releases what the controller holds:
+
+- the pending `abortAfter` timer, and
+- the listeners a [linked controller](/concepts/linked-controllers/) put on its parents.
+
+It **does not abort**. Like .NET's `CancellationTokenSource.Dispose`, it is about resources, not about stopping work. Code waiting on the signal is not woken up.
+
+```ts twoslash
+import { EnhancedAbortController } from '@ylcnfrht/enhanced-abort-controller';
+// ---cut---
+const controller = new EnhancedAbortController().abortAfter(100);
+controller.dispose();
+
+controller.signal.aborted; // false, and the 100 ms deadline will never fire
+controller.isDisposed; // true
+
+controller.abort('late'); // still works after dispose
+// controller.abortAfter(10); // throws: a disposed controller can't schedule
+```
+
+| After `dispose()` | |
+|---|---|
+| `abort(reason)` | Works. |
+| `abortAfter(delay)` | Throws `Error` (a `RangeError` first if the delay is invalid). |
+| `dispose()` again | No-op. |
+| Signal listeners, `register` callbacks | Untouched: they still run if you `abort()` later. |
+
+## using
+
+`EnhancedAbortController` implements `Disposable`, so `using` disposes it at the end of the block, however the block exits:
+
+```ts twoslash
+import { EnhancedAbortController, TimeSpan } from '@ylcnfrht/enhanced-abort-controller';
+declare function work(signal: AbortSignal): Promise<string>;
+// ---cut---
+async function withDeadline() {
+  using controller = new EnhancedAbortController().abortAfter(TimeSpan.fromSeconds(5));
+  return await work(controller.signal);
+} // finished in 1 s? The 5 s timer is cleared here.
+```
+
+Keep the `await` in `return await`: without it the function returns the pending promise, `using` disposes at once, and the deadline is gone while the work still runs.
+
+Without `using`:
+
+```ts twoslash
+import { EnhancedAbortController } from '@ylcnfrht/enhanced-abort-controller';
+declare function work(signal: AbortSignal): Promise<string>;
+// ---cut---
+const controller = new EnhancedAbortController().abortAfter(5000);
+try {
+  await work(controller.signal);
+} finally {
+  controller.dispose();
+}
+```
+
+## Dispose, abort, or both?
+
+| You want | Call |
+|---|---|
+| Stop the work | `abort()` |
+| The work finished; clean up | `dispose()` (or `using`) |
+| Stop the work and clean up | `abort()`. An abort already releases the timer and the parent links; `dispose()` afterwards is harmless. |
+
+<Aside type="note" title="Why dispose at all?">
+  A pending `abortAfter` keeps the controller (and everything its signal's listeners reference) in memory until the timer fires; in Node the timer
+  won't keep the process alive, but it does keep the objects. A linked child keeps a listener on its parent. On a server that creates a controller per request,
+  disposing promptly keeps memory flat.
+</Aside>
+
+## AbortRegistration lifetimes
+
+[`register()`](/concepts/register-when-aborted/) returns an `AbortRegistration`, which is disposable the same way: `unregister()`, `dispose()` or `using`.

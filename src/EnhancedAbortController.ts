@@ -1,269 +1,180 @@
-import { EnhancedAbortSignal } from './EnhancedAbortSignal';
-import { TimeSpan } from './TimeSpan';
+import { timeoutReason } from './AbortError.ts';
+import type { AbortRegistration } from './AbortRegistration.ts';
+import { none } from './none.ts';
+import { register, whenAborted } from './register.ts';
+import type { TimeSpan } from './TimeSpan.ts';
+
+/** A delay: milliseconds or a {@link TimeSpan}. `Infinity` or -1 (`TimeSpan.infinite`) mean "never". */
+export type Delay = number | TimeSpan;
+
+/** The signal of an {@link EnhancedAbortController}: a real `AbortSignal`, with a few extras. */
+export interface EnhancedSignal extends AbortSignal {
+  /** Same as `register(signal, callback)`. */
+  register(callback: (reason: unknown) => void): AbortRegistration;
+  /** Same as `whenAborted(signal)`: resolves with the reason once the signal aborts. */
+  readonly whenAborted: Promise<unknown>;
+  /** Always true for a controller's signal (see `EnhancedAbortSignal.canBeAborted`). */
+  readonly canBeAborted: boolean;
+}
+
+/** setTimeout's limit: longer delays overflow and fire immediately, so they are split. */
+/** @internal */
+export const MAX_TIMER_MS = 2 ** 31 - 1;
 
 /**
- * Enhanced AbortController with Node.js-style patterns for modern applications.
- *
- * This class provides an enhanced version of the native AbortController with additional
- * features like timeout-based cancellation, linked controllers, and disposal patterns.
+ * Milliseconds for a delay, `Infinity` for "never".
+ * @throws RangeError for NaN, negatives other than -1, and non-numbers.
+ * @internal
+ */
+export function toMilliseconds(delay: Delay): number {
+  // Duck-typed, not instanceof: the ESM and CJS builds each have their own TimeSpan class.
+  const ms = typeof delay === 'object' && delay !== null ? (delay as TimeSpan).milliseconds : delay;
+  if (ms === Infinity || ms === -1) return Infinity;
+  if (typeof ms !== 'number' || !Number.isFinite(ms) || ms < 0) {
+    throw new RangeError(
+      `Invalid delay: ${String(ms)}. Use a non-negative number of milliseconds or a TimeSpan; Infinity or -1 mean no timeout.`,
+    );
+  }
+  return ms;
+}
+
+/** Starts an unref'd timer (it never keeps the process alive), chaining for delays past setTimeout's limit. */
+function startTimer(ms: number, onFire: () => void): () => void {
+  let handle: ReturnType<typeof setTimeout>;
+  const arm = (remaining: number) => {
+    handle =
+      remaining > MAX_TIMER_MS ? setTimeout(() => arm(remaining - MAX_TIMER_MS), MAX_TIMER_MS) : setTimeout(onFire, remaining);
+    (handle as { unref?: () => void }).unref?.();
+  };
+  arm(ms);
+  return () => clearTimeout(handle);
+}
+
+/**
+ * An `AbortController` with .NET `CancellationTokenSource` features. It *is* an `AbortController`,
+ * and `controller.signal` is a real `AbortSignal`: pass it to fetch, `AbortSignal.any`, streams,
+ * timers and any other API that takes a signal.
  *
  * @example
- * ```typescript
- * const controller = new EnhancedAbortController();
- *
- * // Abort after 5 seconds
- * controller.abortAfter(5000);
- *
- * // Use in async operations
- * async function doWork(signal: EnhancedAbortSignal) {
- *   for (let i = 0; i < 10; i++) {
- *     signal.throwIfAborted();
- *     console.log(`Working... ${i}`);
- *     await new Promise(resolve => setTimeout(resolve, 1000));
- *   }
- * }
- *
- * doWork(controller.signal).catch(err => {
- *   if (err instanceof AbortError) {
- *     console.log('Operation was aborted');
- *   }
- * });
+ * ```ts
+ * const controller = new EnhancedAbortController().abortAfter(TimeSpan.fromSeconds(5));
+ * const response = await fetch(url, { signal: controller.signal });
  * ```
  */
-export class EnhancedAbortController {
-  private controller: AbortController;
-  private timeoutId?: ReturnType<typeof setTimeout>;
-  private disposed = false;
+export class EnhancedAbortController extends AbortController implements Disposable {
+  #cancelTimer: (() => void) | undefined;
+  #links: AbortRegistration[] = [];
+  #disposed = false;
 
-  /**
-   * Creates a new EnhancedAbortController instance.
-   *
-   * @example
-   * ```typescript
-   * const controller = new EnhancedAbortController();
-   * ```
-   */
   constructor() {
-    this.controller = new AbortController();
+    super();
+    const signal = super.signal;
+    let aborted: Promise<unknown> | undefined;
+    Object.defineProperties(signal, {
+      register: { value: (callback: (reason: unknown) => void) => register(signal, callback), configurable: true },
+      // One promise (and one listener) per signal, however often it is read.
+      whenAborted: { get: () => (aborted ??= whenAborted(signal)), configurable: true },
+      canBeAborted: { value: true, configurable: true },
+    });
+    // Once aborted, nothing more can happen: release the timer and the links to parent signals.
+    // Guarded: a synthetic dispatchEvent(new Event('abort')) must not disarm a live controller.
+    const onAbort = () => (signal.aborted ? this.#release() : undefined);
+    signal.addEventListener('abort', onAbort);
   }
 
-  /**
-   * Gets the enhanced abort signal associated with this controller.
-   *
-   * @returns The EnhancedAbortSignal instance
-   *
-   * @example
-   * ```typescript
-   * const controller = new EnhancedAbortController();
-   * const signal = controller.signal;
-   * signal.register(() => console.log('Aborted!'));
-   * ```
-   */
-  get signal(): EnhancedAbortSignal {
-    return new EnhancedAbortSignal(this.controller.signal);
+  /** The controller's signal: a real `AbortSignal`, always the same object. */
+  override get signal(): EnhancedSignal {
+    return super.signal as EnhancedSignal;
   }
 
-  /**
-   * Gets whether the controller has been aborted.
-   *
-   * @returns True if the controller has been aborted, false otherwise
-   *
-   * @example
-   * ```typescript
-   * const controller = new EnhancedAbortController();
-   * console.log(controller.isAborted); // false
-   * controller.abort();
-   * console.log(controller.isAborted); // true
-   * ```
-   */
+  /** Same as `signal.aborted`. */
   get isAborted(): boolean {
-    return this.controller.signal.aborted;
+    return super.signal.aborted;
   }
 
-  /**
-   * Gets whether the controller has been disposed.
-   *
-   * @returns True if the controller has been disposed, false otherwise
-   *
-   * @example
-   * ```typescript
-   * const controller = new EnhancedAbortController();
-   * console.log(controller.isDisposed); // false
-   * controller.dispose();
-   * console.log(controller.isDisposed); // true
-   * ```
-   */
+  /** Same as `signal.reason`: why it aborted, `undefined` until then. */
+  get reason(): unknown {
+    return super.signal.reason;
+  }
+
+  /** True after {@link dispose}. */
   get isDisposed(): boolean {
-    return this.disposed;
+    return this.#disposed;
   }
 
   /**
-   * Gets the abort reason.
+   * Aborts after `delay`, like .NET's `CancelAfter`: calling it again **replaces** the previous schedule,
+   * and `Infinity` / -1 / `TimeSpan.infinite` cancel it. The reason is a `DOMException` named
+   * `TimeoutError`, as with `AbortSignal.timeout`. The timer never keeps the process alive, and delays
+   * longer than 24.8 days work. Does nothing once aborted. Returns the controller, for chaining.
    *
-   * @returns The reason for the abort, or undefined if not aborted
-   *
-   * @example
-   * ```typescript
-   * const controller = new EnhancedAbortController();
-   * controller.abort('User cancelled');
-   * console.log(controller.reason); // 'User cancelled'
-   * ```
+   * @throws RangeError for NaN, negative (other than -1) or non-numeric delays.
+   * @throws Error if the controller was disposed.
    */
-  get reason(): any {
-    return this.controller.signal.reason;
+  abortAfter(delay: Delay): this {
+    const ms = toMilliseconds(delay);
+    if (this.#disposed) throw new Error('Cannot schedule an abort on a disposed EnhancedAbortController.');
+    if (this.isAborted) return this;
+    this.#cancelTimer?.();
+    this.#cancelTimer = ms === Infinity ? undefined : startTimer(ms, () => this.abort(timeoutReason()));
+    return this;
+  }
+
+  /** Same as {@link abortAfter} with a `TimeSpan`. Kept for 1.x code. */
+  abortAfterTimeSpan(timeSpan: TimeSpan): this {
+    return this.abortAfter(timeSpan);
   }
 
   /**
-   * Aborts the controller immediately.
-   *
-   * @param reason - Optional reason for the abort
-   *
-   * @example
-   * ```typescript
-   * const controller = new EnhancedAbortController();
-   * controller.abort('Manual cancellation');
-   * ```
-   */
-  abort(reason?: any): void {
-    if (this.disposed) return;
-
-    this.clearTimeout();
-    this.controller.abort(reason);
-  }
-
-  /**
-   * Aborts the controller after a specified delay.
-   *
-   * @param ms - Milliseconds to wait before aborting
-   *
-   * @example
-   * ```typescript
-   * const controller = new EnhancedAbortController();
-   * controller.abortAfter(5000); // Abort after 5 seconds
-   * ```
-   */
-  abortAfter(ms: number): void {
-    if (this.disposed) return;
-
-    this.clearTimeout();
-    this.timeoutId = setTimeout(() => this.abort(), ms);
-  }
-
-  /**
-   * Aborts the controller after a specified delay using TimeSpan.
-   *
-   * @param timeSpan - TimeSpan object representing the delay
-   *
-   * @example
-   * ```typescript
-   * const controller = new EnhancedAbortController();
-   * const timeSpan = TimeSpan.fromSeconds(5);
-   * controller.abortAfterTimeSpan(timeSpan);
-   * ```
-   */
-  abortAfterTimeSpan(timeSpan: TimeSpan): void {
-    this.abortAfter(timeSpan.milliseconds);
-  }
-
-  /**
-   * Disposes the controller and cleans up resources.
-   * After disposal, the controller cannot be used for new operations.
-   *
-   * @example
-   * ```typescript
-   * const controller = new EnhancedAbortController();
-   * // ... use controller
-   * controller.dispose();
-   * ```
+   * Releases what the controller holds: the scheduled abort and the listeners it put on linked parent
+   * signals. It does **not** abort (like .NET's `Dispose`); call `abort()` first if work should stop.
+   * `abort()` still works afterwards. Safe to call more than once; supports `using`.
    */
   dispose(): void {
-    if (this.disposed) return;
+    if (this.#disposed) return;
+    this.#disposed = true;
+    this.#release();
+  }
 
-    this.disposed = true;
-    this.clearTimeout();
+  [Symbol.dispose](): void {
+    this.dispose();
+  }
+
+  #release(): void {
+    this.#cancelTimer?.();
+    this.#cancelTimer = undefined;
+    for (const link of this.#links.splice(0)) link.unregister();
+  }
+
+  /** A controller that aborts after `delay`, with a `TimeoutError` reason. */
+  static timeout<C extends EnhancedAbortController>(this: new () => C, delay: Delay): C {
+    return new this().abortAfter(delay);
   }
 
   /**
-   * Clears the current timeout if one is set.
+   * A controller that aborts as soon as any of `signals` aborts, with that signal's reason, like .NET's
+   * `CreateLinkedTokenSource`. Aborting the linked controller does not affect the parents. Its listeners
+   * on the parents are removed when it aborts or is disposed, so short-lived links on a long-lived parent
+   * don't leak. `undefined`/`null` entries (optional signals) and `EnhancedAbortSignal.none` are skipped.
    */
-  private clearTimeout(): void {
-    if (this.timeoutId) {
-      clearTimeout(this.timeoutId);
-      this.timeoutId = undefined;
-    }
-  }
-
-  /**
-   * Creates a controller that is linked to multiple signals.
-   * The linked controller will abort when any of the provided signals abort.
-   *
-   * @param signals - The signals to link
-   * @returns A new controller that aborts when any of the signals abort
-   *
-   * @example
-   * ```typescript
-   * const controller1 = new EnhancedAbortController();
-   * const controller2 = new EnhancedAbortController();
-   *
-   * const linkedController = EnhancedAbortController.linkSignals(
-   *   controller1.signal,
-   *   controller2.signal
-   * );
-   *
-   * // Aborting either controller1 or controller2 will abort linkedController
-   * controller1.abort();
-   * console.log(linkedController.isAborted); // true
-   * ```
-   */
-  static linkSignals(
-    ...signals: EnhancedAbortSignal[]
-  ): EnhancedAbortController {
-    const controller = new EnhancedAbortController();
+  static createLinkedController<C extends EnhancedAbortController>(
+    this: new () => C,
+    ...signals: Array<AbortSignal | null | undefined>
+  ): C {
+    const controller = new this();
     for (const signal of signals) {
-      signal.register(() => controller.abort());
+      if (!signal || signal === none) continue;
+      if (signal.aborted) {
+        controller.abort(signal.reason);
+        break;
+      }
+      controller.#links.push(register(signal, (reason) => controller.abort(reason)));
     }
     return controller;
   }
 
-  /**
-   * Creates a controller that is linked to multiple signals (alternative name).
-   * The linked controller will abort when any of the provided signals abort.
-   *
-   * @param signals - The signals to link
-   * @returns A new controller that aborts when any of the signals abort
-   *
-   * @example
-   * ```typescript
-   * const controller1 = new EnhancedAbortController();
-   * const controller2 = new EnhancedAbortController();
-   *
-   * const linkedController = EnhancedAbortController.createLinkedController(
-   *   controller1.signal,
-   *   controller2.signal
-   * );
-   * ```
-   */
-  static createLinkedController(
-    ...signals: EnhancedAbortSignal[]
-  ): EnhancedAbortController {
-    return this.linkSignals(...signals);
-  }
-
-  /**
-   * Creates a controller that aborts after a timeout.
-   *
-   * @param ms - Milliseconds to wait before aborting
-   * @returns A new controller that aborts after the specified time
-   *
-   * @example
-   * ```typescript
-   * const controller = EnhancedAbortController.timeout(5000);
-   * // Controller will automatically abort after 5 seconds
-   * ```
-   */
-  static timeout(ms: number): EnhancedAbortController {
-    const controller = new EnhancedAbortController();
-    controller.abortAfter(ms);
-    return controller;
+  /** Same as {@link createLinkedController}. */
+  static linkSignals<C extends EnhancedAbortController>(this: new () => C, ...signals: Array<AbortSignal | null | undefined>): C {
+    return (this as unknown as typeof EnhancedAbortController).createLinkedController.call(this, ...signals) as C;
   }
 }

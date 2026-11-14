@@ -1,0 +1,81 @@
+---
+title: Per-step deadlines
+description: Give each step of a job or request its own deadline while still following the overall cancellation, without leaking listeners.
+sidebar:
+  order: 4
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+A request or job has an overall signal (client disconnect, shutdown, an overall budget). Its steps need their own, shorter deadlines. A linked controller per step gives both: it aborts when the parent does (with the parent's reason) or when its own `abortAfter` fires.
+
+```ts twoslash
+import { EnhancedAbortController, isTimeoutError } from '@ylcnfrht/enhanced-abort-controller';
+declare const request: AbortController;
+declare function sleep(ms: number, signal: AbortSignal): Promise<void>;
+// ---cut---
+const steps = [
+  ['load user', 10],
+  ['render', 200],
+] as const;
+
+for (const [step, ms] of steps) {
+  // Aborts when the request aborts (with its reason) or after 100 ms, whichever comes first.
+  using stepController = EnhancedAbortController.createLinkedController(request.signal).abortAfter(100);
+  try {
+    await sleep(ms, stepController.signal);
+    console.log(`${step}: ok`);
+  } catch (error) {
+    console.log(`${step}: ${isTimeoutError(error) ? 'timed out' : 'request cancelled'}`);
+  }
+  // Leaving the block disposes the step controller: its listener on request.signal is removed.
+}
+```
+
+Output: `load user: ok`, then `render: timed out`. The request itself is still live: a step timing out doesn't abort the parent.
+
+## Who timed out?
+
+The reason tells you. A step's own deadline is a `TimeoutError` on the step; a parent abort is the parent's reason (which may also be a `TimeoutError` if the parent has a deadline). To be exact, compare signals:
+
+```ts twoslash
+import { EnhancedAbortController } from '@ylcnfrht/enhanced-abort-controller';
+declare const job: EnhancedAbortController;
+declare function step(signal: AbortSignal): Promise<void>;
+// ---cut---
+using s = EnhancedAbortController.createLinkedController(job.signal).abortAfter(2000);
+try {
+  await step(s.signal);
+} catch (error) {
+  if (job.signal.aborted) throw error; // the whole job is over: stop
+  if (s.signal.aborted) console.log('this step was too slow; continue with a fallback');
+  else throw error;
+}
+```
+
+## Remaining budget
+
+To split one overall budget across steps, compute what's left and use it as the step deadline:
+
+```ts twoslash
+import { EnhancedAbortController, TimeSpan } from '@ylcnfrht/enhanced-abort-controller';
+declare const request: AbortSignal;
+declare const steps: ((signal: AbortSignal) => Promise<void>)[];
+// ---cut---
+const budget = TimeSpan.fromSeconds(5);
+const started = Date.now();
+
+for (const run of steps) {
+  const left = Math.max(0, budget.milliseconds - (Date.now() - started));
+  using step = EnhancedAbortController.createLinkedController(request).abortAfter(Math.min(left, 2000));
+  await run(step.signal);
+}
+```
+
+## Why dispose matters here
+
+Each step's controller adds one `abort` listener to the parent. Disposing (or aborting) the step removes it. Without that, a long-lived parent (a shutdown signal, a websocket session) collects one listener per step ever run, and Node prints `MaxListenersExceededWarning` once there are more than 10. Watch the count go back to zero in the [linked-signals playground](/concepts/linked-controllers/#try-it).
+
+<Aside type="tip">
+  `using` is the simplest way to get this right: the step controller is disposed when the loop iteration ends, whether the step succeeded, threw or timed out.
+</Aside>

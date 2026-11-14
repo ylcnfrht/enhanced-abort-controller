@@ -1,0 +1,83 @@
+---
+title: register & whenAborted
+description: Run a callback with the reason when any AbortSignal aborts, unregister it with a handle or using, and await an abort as a promise.
+sidebar:
+  order: 4
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Both work with **any** `AbortSignal`: yours, fetch's, a framework's, `AbortSignal.timeout`.
+
+## register(signal, callback)
+
+[`register`](/api/functions/register/) is .NET's `CancellationToken.Register`. It runs `callback(reason)` once when the signal aborts and returns an [`AbortRegistration`](/api/classes/abortregistration/).
+
+```ts twoslash
+import { register } from '@ylcnfrht/enhanced-abort-controller';
+declare const signal: AbortSignal;
+declare const socket: { destroy(error?: Error): void };
+declare function doWork(): Promise<void>;
+// ---cut---
+const registration = register(signal, (reason) => socket.destroy(reason as Error));
+try {
+  await doWork();
+} finally {
+  registration.unregister(); // the work is done: stop listening
+}
+
+// Same thing with using:
+{
+  using _ = register(signal, () => socket.destroy());
+  await doWork();
+}
+```
+
+| `AbortRegistration` | |
+|---|---|
+| `unregister()` | Removes the callback. Safe to call more than once. |
+| `dispose()`, `[Symbol.dispose]()` | Same as `unregister()`; supports `using`. |
+| `isDisposed` | `true` once unregistered, once the callback has run, or if the signal was already aborted at registration. |
+
+The controller's own signal has it built in: `controller.signal.register(cb)`.
+
+### Already aborted? It runs now
+
+If the signal has already aborted, `register` calls the callback **synchronously, before returning**, and returns an already-disposed registration. Compare `addEventListener('abort', ...)`, which never fires for a signal that aborted earlier.
+
+### Errors in callbacks
+
+- Signal already aborted: the callback runs inside `register()`, so its exception propagates to the caller of `register()`.
+- Otherwise the callback runs as an `abort` event listener. An exception there is reported like any event-listener exception, not to whoever called `abort()`. **In Node that is an uncaught exception**, which by default ends the process.
+
+<Aside type="caution">
+  Catch errors inside callbacks: `register(signal, () => { try { cleanup(); } catch (e) { log(e); } })`.
+</Aside>
+
+### Unregister on long-lived signals
+
+A request-scoped callback on an app-wide shutdown signal stays attached until it is removed. Unregister when the guarded work finishes, or scope it with `using`. `EnhancedAbortSignal.none` never aborts, so `register(none, cb)` adds no listener at all.
+
+## whenAborted(signal)
+
+[`whenAborted`](/api/functions/whenaborted/) returns a promise that resolves with the reason once the signal aborts, immediately if it already has. It **never rejects**, so it is safe to race:
+
+```ts twoslash
+import { whenAborted, isTimeoutError } from '@ylcnfrht/enhanced-abort-controller';
+declare const signal: AbortSignal;
+declare function poll(): Promise<string>;
+// ---cut---
+const winner = await Promise.race([poll(), whenAborted(signal).then((reason) => ({ aborted: reason }))]);
+
+const reason = await whenAborted(signal);
+if (isTimeoutError(reason)) console.log('deadline');
+```
+
+- The listener is removed when the signal aborts. A `whenAborted` on a signal that never aborts keeps its listener (and promise) as long as the signal lives; prefer `register` with `unregister()` for work that can end first.
+- `controller.signal.whenAborted` is cached: one promise and one listener per signal however often you read it.
+- `whenAborted(EnhancedAbortSignal.none)` returns one shared promise that never settles and holds no listener.
+
+<Aside type="note">
+  Awaiting `whenAborted` alone does not keep Node running while only an `abortAfter` timer is pending. See
+  [the timer never keeps the process alive](/concepts/abort-after/#the-timer-never-keeps-the-process-alive).
+</Aside>

@@ -1,0 +1,66 @@
+---
+title: Upgrading from 1.x
+description: 2.0 makes the signal a real AbortSignal. Every breaking change from 1.x, before and after, and a checklist.
+sidebar:
+  order: 1
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+2.0 is a redesign around the native `AbortSignal`. In 1.x, `controller.signal` was a wrapper class (`EnhancedAbortSignal`) that kept the real signal in a private field. Platform APIs don't accept the wrapper, and the documented `fetch(url, { signal: controller.signal.signal })` read a property that didn't exist: fetch got `undefined` and the request was never cancellable. In 2.0 there is no wrapper.
+
+<Aside type="caution" title="Why 1.x fetch examples didn't cancel">
+  `controller.signal.signal` was `undefined` in 1.x, so fetch ran without a signal and every abort or timeout was silently ignored; passing
+  `controller.signal` itself fails because the wrapper is not an `AbortSignal`. If your 1.x code "worked", it most likely never cancelled anything.
+</Aside>
+
+## Before and after
+
+| 1.x | 2.0 |
+|---|---|
+| `fetch(url, { signal: controller.signal.signal })` | `fetch(url, { signal: controller.signal })` |
+| `controller.signal` is an `EnhancedAbortSignal` wrapper, a new object on every read | `controller.signal` is the native `AbortSignal`, always the same object |
+| `signal.throwIfAborted('message')` throws `new AbortError(message)` | Native `signal.throwIfAborted()` throws `signal.reason` |
+| `catch (e) { if (e instanceof AbortError) ... }` | `catch (e) { if (isAbortError(e)) ... }` (fetch throws `DOMException`s, not the library's class) |
+| Linked and `any` signals abort with no reason (the parent's reason is dropped) | The parent's reason is forwarded, the same object |
+| `register(() => ...)` | `register((reason) => ...)`, returns an `AbortRegistration` with `using` support |
+| `signal.whenAborted` resolves with `undefined` | Resolves with the reason |
+| Timeout reason: `AbortError` | `TimeoutError` `DOMException`, like `AbortSignal.timeout` |
+| `abortAfter(ms)` returns `void` | Returns the controller (chainable); accepts a `TimeSpan` |
+| `abortAfter(NaN)` / negative fires at once | Throws `RangeError`; `Infinity` / -1 cancel the schedule |
+| Delays over 24.8 days fire immediately (`setTimeout` overflow) | Work (chained timers) |
+| `abortAfter` timer keeps Node running until it fires | Unref'd, like `AbortSignal.timeout` |
+| `dispose()` documented as aborting; `abort()` after `dispose()` silently ignored | `dispose()` releases the timer and links and **does not abort**; `abort()` still works; `abortAfter()` after dispose throws |
+| Linked controllers keep their listeners on the parents forever | Removed when the child aborts or is disposed |
+| `EnhancedAbortSignal.none` / `.aborted`: wrapper objects, `none` a new one each read | `none` is one shared native signal; `aborted` a new native aborted signal |
+| `EnhancedAbortSignal.timeout(ms)` timer kept the process alive, `AbortError` reason | Native `AbortSignal.timeout` semantics, accepts `TimeSpan`, `Infinity` → `none` |
+| `EnhancedAbortSignal.any(signals)` takes wrappers | Takes any `AbortSignal`s (and skips `undefined`, `null`, `none`) |
+| `signal.isAborted`, `signal.canBeAborted` on the wrapper | `signal.aborted` (native); `signal.canBeAborted` on a controller's signal, `EnhancedAbortSignal.canBeAborted(signal)` for any |
+| No `using` | `using` for controllers and registrations |
+| CommonJS only | ESM and CommonJS |
+
+Unchanged: `new EnhancedAbortController()`, `abort(reason?)`, `isAborted`, `reason`, `isDisposed`, `abortAfterTimeSpan`, `EnhancedAbortController.timeout`, `createLinkedController` / `linkSignals`, `TimeSpan` factories and `total*` getters, `AbortError`.
+
+## Checklist
+
+<Steps>
+
+1. **Replace `.signal.signal` with `.signal`** everywhere. Search for `signal.signal`.
+
+2. **Stop wrapping and unwrapping.** Remove `new EnhancedAbortSignal(...)` calls; 2.0's `EnhancedAbortSignal` is a helper object, not a class. Functions that took an `EnhancedAbortSignal` should take an `AbortSignal`.
+
+3. **Replace `instanceof AbortError` with `isAbortError(e)`**, and use `isTimeoutError(e)` where you tell timeouts from cancels. fetch rejects with `DOMException`s that were never `instanceof` the library's class.
+
+4. **Replace `signal.throwIfAborted('message')`** with `signal.throwIfAborted()`. To get a specific error, abort with it: `controller.abort(new AbortError('message'))`.
+
+5. **Check code that reads reasons.** Linked controllers now forward the parent's reason; timeouts are `TimeoutError`; `whenAborted` resolves with the reason. Code that compared reasons to strings or expected `undefined` may need updating.
+
+6. **Check `dispose()` calls.** If you relied on `dispose()` to stop work, call `abort()` first (or instead). If you relied on `abort()` being ignored after `dispose()`, guard it.
+
+7. **Check scripts that only wait for a deadline.** The timer no longer keeps Node alive; see [abortAfter & timeouts](/concepts/abort-after/#the-timer-never-keeps-the-process-alive).
+
+8. **Validate delays.** `abortAfter(NaN)` and negative delays now throw. `abortAfter(-1)` means "no deadline".
+
+9. **Optionally adopt `using`** for controllers and registrations, and dispose linked controllers so their parent listeners go away.
+
+</Steps>

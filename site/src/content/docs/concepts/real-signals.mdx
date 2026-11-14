@@ -1,0 +1,83 @@
+---
+title: Signals are real AbortSignals
+description: EnhancedAbortController extends AbortController; its signal is a native AbortSignal with three extras, accepted by every signal-aware API.
+sidebar:
+  order: 1
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`EnhancedAbortController` **is** an `AbortController` (it extends it), and `controller.signal` **is** the native `AbortSignal` that `AbortController` creates. Nothing wraps it.
+
+```ts twoslash
+import { EnhancedAbortController } from '@ylcnfrht/enhanced-abort-controller';
+// ---cut---
+const controller = new EnhancedAbortController();
+
+controller instanceof AbortController; // true
+controller.signal instanceof AbortSignal; // true
+controller.signal === controller.signal; // true: always the same object
+
+const combined = AbortSignal.any([controller.signal, AbortSignal.timeout(5000)]);
+controller.signal.addEventListener('abort', () => console.log('aborted'));
+controller.signal.throwIfAborted(); // native: throws signal.reason once aborted
+```
+
+So it works everywhere a signal does: `fetch`, `fs/promises`, `timers/promises`, `stream.pipeline`, `events.once`, `child_process`, `AbortSignal.any`, database and HTTP clients.
+
+<Aside type="caution" title="1.x was different">
+  In 1.x, `controller.signal` was a wrapper object that platform APIs don't accept, and the documented `controller.signal.signal` was `undefined`, so
+  those fetch calls never aborted. In 2.0, pass `controller.signal` directly. See [Upgrading from 1.x](/migration/v1-to-v2/).
+</Aside>
+
+## The extras on the signal
+
+The controller adds three properties to its own signal. Their type is [`EnhancedSignal`](/api/interfaces/enhancedsignal/), which extends `AbortSignal`:
+
+| Member | What it does |
+|---|---|
+| `signal.register(cb)` | Same as [`register(signal, cb)`](/concepts/register-when-aborted/): runs `cb(reason)` on abort, returns a disposable `AbortRegistration`. |
+| `signal.whenAborted` | Same as `whenAborted(signal)`: a promise of the reason. Cached, so reading it twice gives the same promise and adds one listener. |
+| `signal.canBeAborted` | Always `true` for a controller's signal. |
+
+```ts twoslash
+import { EnhancedAbortController } from '@ylcnfrht/enhanced-abort-controller';
+// ---cut---
+const controller = new EnhancedAbortController();
+controller.signal.register((reason) => console.log('cleanup', reason));
+controller.abort('stop');
+const reason = await controller.signal.whenAborted; // 'stop'
+```
+
+Signals you didn't create (from fetch, a framework, `AbortSignal.timeout`) don't have these properties. Use the standalone functions [`register`](/api/functions/register/) and [`whenAborted`](/api/functions/whenaborted/), or the [`EnhancedAbortSignal`](/api/variables/enhancedabortsignal/) helpers; they accept any `AbortSignal`.
+
+## Controller shortcuts
+
+| Member | Same as |
+|---|---|
+| `controller.isAborted` | `controller.signal.aborted` |
+| `controller.reason` | `controller.signal.reason` |
+| `controller.isDisposed` | true after [`dispose()`](/concepts/dispose/) |
+
+## EnhancedAbortSignal helpers
+
+`EnhancedAbortSignal` is a plain object of helpers, not a class. Every one returns or accepts real signals.
+
+| Helper | What it gives you |
+|---|---|
+| `EnhancedAbortSignal.none` | One shared signal that never aborts (.NET `CancellationToken.None`). Use it as a default for optional signals. Registering on it adds no listener. |
+| `EnhancedAbortSignal.aborted` | A new, already-aborted signal (a getter: a fresh one each read). |
+| `EnhancedAbortSignal.timeout(delay)` | `AbortSignal.timeout` that also accepts a `TimeSpan`. `Infinity` returns `none`; delays over 24.8 days use a chained timer. |
+| `EnhancedAbortSignal.any(signals)` | `AbortSignal.any`, skipping `undefined`, `null` and `none`. Returns `none` if nothing is left. |
+| `EnhancedAbortSignal.register`, `.whenAborted` | The standalone functions. |
+| `EnhancedAbortSignal.canBeAborted(signal)` | `false` only for `none` (.NET `CanBeCanceled`). |
+
+```ts twoslash
+import { EnhancedAbortSignal, TimeSpan } from '@ylcnfrht/enhanced-abort-controller';
+// ---cut---
+async function search(query: string, signal?: AbortSignal) {
+  // Optional caller signal plus our own 10 s budget; an undefined signal is skipped.
+  const combined = EnhancedAbortSignal.any([signal, EnhancedAbortSignal.timeout(TimeSpan.fromSeconds(10))]);
+  return fetch(`/search?q=${encodeURIComponent(query)}`, { signal: combined });
+}
+```
